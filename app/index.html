@@ -21,6 +21,22 @@
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="supabaseConfig.js"></script>
-<script type="text/babel" data-presets='[["react", {"runtime": "classic"}]]' src="app.js"></script>
+<script>
+ // Carrega e transpila o app.js manualmente (em vez de usar data-presets,
+ // que não aceita opções como "runtime: classic" via atributo HTML).
+ fetch('app.js')
+   .then(function (r) { return r.text(); })
+   .then(function (code) {
+     var output = Babel.transform(code, {
+       presets: [["react", { runtime: "classic" }]]
+     }).code;
+     var script = document.createElement('script');
+     script.text = output;
+     document.body.appendChild(script);
+   })
+   .catch(function (err) {
+     console.error('Erro ao carregar app.js:', err);
+   });
+</script>
 </body>
 </html>
