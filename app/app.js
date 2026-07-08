@@ -65,8 +65,8 @@ function LoginScreen({ onLogin }) {
   return (
     <div className="login-screen">
       <div className="card login-card">
-        <div className="login-logo">📦</div>
-        <h1>Estoque de Insumos</h1>
+        <div className="login-logo"><CubeIcon size={26} /></div>
+        <h1>Gestão de Insumos</h1>
         <div className="subtitle">Entre com seu PN e senha</div>
         {erro && <div className="login-error">{erro}</div>}
         <form onSubmit={handleSubmit}>
@@ -166,6 +166,19 @@ function ForcePasswordChange({ user, onDone }) {
 // ============================================================================
 // NAVEGAÇÃO
 // ============================================================================
+const APP_NAME = "Gestão de Insumos";
+
+// Ícone da aplicação: cubo/caixa de insumo desenhado em SVG.
+function CubeIcon({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2.5l8 4.5v9l-8 4.5-8-4.5v-9l8-4.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" fill="currentColor" fillOpacity="0.12"/>
+      <path d="M4 7l8 4.5L20 7" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+      <path d="M12 11.5V21" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 const NAV_ITEMS = [
   { key: "inicio", label: "Início", icon: "🏠" },
   { key: "reserva", label: "Reserva", icon: "🧾" },
@@ -178,8 +191,8 @@ function TopBar({ user, onLogout }) {
   return (
     <div className="topbar">
       <div className="topbar-brand">
-        <span className="dot" />
-        Estoque de Insumos
+        <span className="brand-icon"><CubeIcon size={20} /></span>
+        {APP_NAME}
       </div>
       <div className="topbar-user">
         <span>{user.nome} · {user.pn}</span>
@@ -189,20 +202,21 @@ function TopBar({ user, onLogout }) {
   );
 }
 
-function BottomNav({ active, onChange }) {
+function SideNav({ active, onChange }) {
   return (
-    <div className="bottomnav">
+    <nav className="sidenav">
       {NAV_ITEMS.map((item) => (
         <button
           key={item.key}
           className={active === item.key ? "active" : ""}
           onClick={() => onChange(item.key)}
+          title={item.label}
         >
           <span className="icon">{item.icon}</span>
-          {item.label}
+          <span className="label">{item.label}</span>
         </button>
       ))}
-    </div>
+    </nav>
   );
 }
 
@@ -274,7 +288,7 @@ function Dashboard({ user, onNavigate }) {
     <div>
       <div className="page-header">
         <h1>Olá, {user.nome.split(" ")[0]} 👋</h1>
-        <p>Aqui está a visão geral do estoque de insumos hoje.</p>
+        <p>Aqui está a visão geral da gestão de insumos hoje.</p>
       </div>
 
       {!loading && criticos.length > 0 && (
@@ -825,26 +839,12 @@ function Estoque() {
 // ============================================================================
 // CONFIGURAÇÕES
 // ============================================================================
-function Configuracoes({ user }) {
-  const [usuarios, setUsuarios] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showNovo, setShowNovo] = useState(false);
-
-  const carregar = useCallback(async () => {
-    if (user.perfil !== "admin") { setLoading(false); return; }
-    setLoading(true);
-    const { data } = await sb.from("usuarios").select("id, pn, nome, perfil, ativo, precisa_trocar_senha").order("nome");
-    setUsuarios(data || []);
-    setLoading(false);
-  }, [user.perfil]);
-
-  useEffect(() => { carregar(); }, [carregar]);
-
+function Configuracoes({ user, onItensChange }) {
   return (
     <div>
       <div className="page-header">
         <h1>Configurações</h1>
-        <p>Gerencie usuários e sua própria conta.</p>
+        <p>Gerencie produtos, usuários e sua própria conta.</p>
       </div>
 
       <div className="card section" style={{ marginBottom: 20 }}>
@@ -853,42 +853,316 @@ function Configuracoes({ user }) {
       </div>
 
       {user.perfil === "admin" ? (
-        <div className="card section">
-          <div className="flex-between" style={{ marginBottom: 16 }}>
-            <h2>Usuários</h2>
-            <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Novo usuário</button>
-          </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>PN</th><th>Nome</th><th>Perfil</th><th>Status</th></tr></thead>
-              <tbody>
-                {usuarios.map((u) => (
-                  <tr key={u.id}>
-                    <td>{u.pn}</td>
-                    <td>{u.nome}</td>
-                    <td><span className="badge badge-neutral">{u.perfil}</span></td>
-                    <td>{u.precisa_trocar_senha
-                      ? <span className="badge badge-critical">Aguardando 1º acesso</span>
-                      : <span className="badge badge-ok">Ativo</span>}
-                    </td>
-                  </tr>
-                ))}
-                {!loading && usuarios.length === 0 && (
-                  <tr><td colSpan="4"><div className="empty-state">Nenhum usuário cadastrado.</div></td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <>
+          <ProdutosConfig onItensChange={onItensChange} />
+          <UsuariosConfig user={user} />
+        </>
       ) : (
         <div className="card section">
-          <p className="muted">Apenas administradores podem cadastrar novos usuários.</p>
+          <p className="muted">Apenas administradores podem gerenciar produtos e usuários.</p>
         </div>
       )}
+    </div>
+  );
+}
 
-      {showNovo && (
-        <NovoUsuarioModal onClose={() => setShowNovo(false)} onSaved={() => { setShowNovo(false); carregar(); }} />
+// ---- PRODUTOS ----
+function ProdutosConfig({ onItensChange }) {
+  const [produtos, setProdutos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [showNovo, setShowNovo] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [excluindo, setExcluindo] = useState(null);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await sb.from("itens")
+      .select("codigo, descricao, unidade, estoque_minimo")
+      .eq("ativo", true)
+      .order("descricao");
+    setProdutos(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  function afterChange() {
+    carregar();
+    if (onItensChange) onItensChange();
+  }
+
+  const filtrado = useMemo(() => {
+    if (!busca) return produtos;
+    const q = busca.toLowerCase();
+    return produtos.filter((p) => `${p.codigo}`.includes(q) || (p.descricao || "").toLowerCase().includes(q));
+  }, [produtos, busca]);
+
+  return (
+    <div className="card section" style={{ marginBottom: 20 }}>
+      <div className="flex-between" style={{ marginBottom: 16 }}>
+        <h2>Produtos</h2>
+        <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Novo produto</button>
+      </div>
+
+      <input
+        className="search-input"
+        type="text"
+        placeholder="Buscar por código ou descrição…"
+        value={busca}
+        onChange={(e) => setBusca(e.target.value)}
+        style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid var(--border)", width: "100%", marginBottom: 16 }}
+      />
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Estoque mínimo</th><th></th></tr>
+          </thead>
+          <tbody>
+            {filtrado.map((p) => (
+              <tr key={p.codigo}>
+                <td>{p.codigo}</td>
+                <td>{p.descricao || "—"}</td>
+                <td>{p.unidade}</td>
+                <td>{fmtNum(p.estoque_minimo)}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12.5, marginRight: 6 }} onClick={() => setEditando(p)}>Editar</button>
+                  <button className="btn btn-danger" style={{ padding: "6px 12px", fontSize: 12.5 }} onClick={() => setExcluindo(p)}>Excluir</button>
+                </td>
+              </tr>
+            ))}
+            {!loading && filtrado.length === 0 && (
+              <tr><td colSpan="5"><div className="empty-state">Nenhum produto encontrado.</div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showNovo && <ProdutoModal onClose={() => setShowNovo(false)} onSaved={() => { setShowNovo(false); afterChange(); }} />}
+      {editando && <ProdutoModal produto={editando} onClose={() => setEditando(null)} onSaved={() => { setEditando(null); afterChange(); }} />}
+      {excluindo && (
+        <ConfirmModal
+          titulo="Excluir produto"
+          mensagem={`Tem certeza que deseja excluir "${excluindo.descricao || excluindo.codigo}"? Se houver movimentações, ele será apenas desativado para preservar o histórico.`}
+          onClose={() => setExcluindo(null)}
+          onConfirm={async () => {
+            await sb.rpc("excluir_item", { p_codigo: excluindo.codigo });
+            setExcluindo(null);
+            afterChange();
+          }}
+        />
       )}
+    </div>
+  );
+}
+
+function ProdutoModal({ produto, onClose, onSaved }) {
+  const editMode = !!produto;
+  const [codigo, setCodigo] = useState(produto ? produto.codigo : "");
+  const [descricao, setDescricao] = useState(produto ? produto.descricao || "" : "");
+  const [unidade, setUnidade] = useState(produto ? produto.unidade || "un" : "un");
+  const [minimo, setMinimo] = useState(produto ? produto.estoque_minimo : "");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!codigo || !descricao) { setErro("Informe o código e a descrição."); return; }
+    setSalvando(true);
+    let res;
+    if (editMode) {
+      res = await sb.rpc("editar_item", { p_codigo: codigo, p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0 });
+    } else {
+      res = await sb.rpc("criar_item", { p_codigo: codigo.trim(), p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0 });
+    }
+    setSalvando(false);
+    if (res.error) { setErro("Não foi possível salvar."); return; }
+    if (res.data === false) { setErro("Já existe um produto com esse código."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>{editMode ? "Editar produto" : "Novo produto"}</h2>
+        {erro && <div className="login-error">{erro}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Código</label>
+            <input type="text" value={codigo} onChange={(e) => setCodigo(e.target.value)} disabled={editMode} />
+          </div>
+          <div className="field">
+            <label>Descrição</label>
+            <input type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label>Unidade</label>
+              <input type="text" value={unidade} onChange={(e) => setUnidade(e.target.value)} placeholder="un, pç, lt…" />
+            </div>
+            <div className="field">
+              <label>Estoque mínimo</label>
+              <input type="number" min="0" step="any" value={minimo} onChange={(e) => setMinimo(e.target.value)} />
+            </div>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---- USUÁRIOS ----
+function UsuariosConfig({ user }) {
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNovo, setShowNovo] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [excluindo, setExcluindo] = useState(null);
+  const [resetando, setResetando] = useState(null);
+  const [aviso, setAviso] = useState("");
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await sb.from("usuarios").select("id, pn, nome, perfil, ativo, precisa_trocar_senha").order("nome");
+    setUsuarios(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  return (
+    <div className="card section">
+      <div className="flex-between" style={{ marginBottom: 16 }}>
+        <h2>Usuários</h2>
+        <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Novo usuário</button>
+      </div>
+      {aviso && <div className="login-error" style={{ marginBottom: 12 }}>{aviso}</div>}
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>PN</th><th>Nome</th><th>Perfil</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {usuarios.map((u) => (
+              <tr key={u.id}>
+                <td>{u.pn}</td>
+                <td>{u.nome}</td>
+                <td><span className="badge badge-neutral">{u.perfil}</span></td>
+                <td>{u.precisa_trocar_senha
+                  ? <span className="badge badge-critical">Aguardando 1º acesso</span>
+                  : <span className="badge badge-ok">Ativo</span>}
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: 12.5, marginRight: 6 }} onClick={() => setEditando(u)}>Editar</button>
+                  <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: 12.5, marginRight: 6 }} onClick={() => setResetando(u)}>Resetar senha</button>
+                  {u.pn !== user.pn && (
+                    <button className="btn btn-danger" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => setExcluindo(u)}>Excluir</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!loading && usuarios.length === 0 && (
+              <tr><td colSpan="5"><div className="empty-state">Nenhum usuário cadastrado.</div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showNovo && <NovoUsuarioModal onClose={() => setShowNovo(false)} onSaved={() => { setShowNovo(false); carregar(); }} />}
+      {editando && <EditarUsuarioModal usuario={editando} onClose={() => setEditando(null)} onSaved={() => { setEditando(null); carregar(); }} />}
+      {resetando && (
+        <ConfirmModal
+          titulo="Resetar senha"
+          mensagem={`A senha de "${resetando.nome}" voltará para 1234, e será exigida a troca no próximo acesso. Confirmar?`}
+          onClose={() => setResetando(null)}
+          onConfirm={async () => {
+            await sb.rpc("resetar_senha_usuario", { p_pn: resetando.pn });
+            setResetando(null);
+            carregar();
+          }}
+        />
+      )}
+      {excluindo && (
+        <ConfirmModal
+          titulo="Excluir usuário"
+          mensagem={`Tem certeza que deseja excluir "${excluindo.nome}"? Esta ação não pode ser desfeita.`}
+          onClose={() => setExcluindo(null)}
+          onConfirm={async () => {
+            const { data } = await sb.rpc("excluir_usuario", { p_pn: excluindo.pn });
+            setExcluindo(null);
+            if (data === false) { setAviso("Não é possível excluir o único administrador do sistema."); }
+            else { setAviso(""); }
+            carregar();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditarUsuarioModal({ usuario, onClose, onSaved }) {
+  const [nome, setNome] = useState(usuario.nome);
+  const [perfil, setPerfil] = useState(usuario.perfil);
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!nome) { setErro("Informe o nome."); return; }
+    setSalvando(true);
+    const { error } = await sb.rpc("editar_usuario", { p_pn: usuario.pn, p_nome: nome.trim(), p_perfil: perfil });
+    setSalvando(false);
+    if (error) { setErro("Não foi possível salvar."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Editar usuário</h2>
+        <div className="subtitle">PN {usuario.pn}</div>
+        {erro && <div className="login-error">{erro}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="field"><label>Nome</label><input type="text" value={nome} onChange={(e) => setNome(e.target.value)} /></div>
+          <div className="field">
+            <label>Perfil</label>
+            <select value={perfil} onChange={(e) => setPerfil(e.target.value)}>
+              <option value="operador">Operador</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---- MODAL DE CONFIRMAÇÃO GENÉRICO ----
+function ConfirmModal({ titulo, mensagem, onClose, onConfirm }) {
+  const [processando, setProcessando] = useState(false);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>{titulo}</h2>
+        <p className="subtitle" style={{ marginTop: 8 }}>{mensagem}</p>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button
+            className="btn btn-danger"
+            disabled={processando}
+            onClick={async () => { setProcessando(true); await onConfirm(); setProcessando(false); }}
+          >
+            {processando ? "Processando…" : "Confirmar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -982,16 +1256,18 @@ function App() {
   const [itens, setItens] = useState({});
   const [itensLoaded, setItensLoaded] = useState(false);
 
+  const carregarItens = useCallback(async () => {
+    const { data } = await sb.from("itens").select("codigo, descricao, unidade, estoque_minimo").eq("ativo", true);
+    const map = {};
+    (data || []).forEach((i) => { map[i.codigo] = i; });
+    setItens(map);
+    setItensLoaded(true);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
-    (async () => {
-      const { data } = await sb.from("itens").select("codigo, descricao, unidade, estoque_minimo").eq("ativo", true);
-      const map = {};
-      (data || []).forEach((i) => { map[i.codigo] = i; });
-      setItens(map);
-      setItensLoaded(true);
-    })();
-  }, [user]);
+    carregarItens();
+  }, [user, carregarItens]);
 
   function handleLogin(u) {
     setUser(u);
@@ -1022,22 +1298,24 @@ function App() {
   return (
     <div className="app-shell">
       <TopBar user={user} onLogout={handleLogout} />
-      <div className="content">
-        {!itensLoaded ? (
-          <div className="loading-screen">Carregando…</div>
-        ) : view === "inicio" ? (
-          <Dashboard user={user} onNavigate={setView} />
-        ) : view === "reserva" ? (
-          <ReservaRecebimento user={user} itens={itens} />
-        ) : view === "saida" ? (
-          <Saida user={user} itens={itens} />
-        ) : view === "estoque" ? (
-          <Estoque />
-        ) : (
-          <Configuracoes user={user} />
-        )}
+      <div className="app-body">
+        <SideNav active={view} onChange={setView} />
+        <div className="content">
+          {!itensLoaded ? (
+            <div className="loading-screen">Carregando…</div>
+          ) : view === "inicio" ? (
+            <Dashboard user={user} onNavigate={setView} />
+          ) : view === "reserva" ? (
+            <ReservaRecebimento user={user} itens={itens} />
+          ) : view === "saida" ? (
+            <Saida user={user} itens={itens} />
+          ) : view === "estoque" ? (
+            <Estoque />
+          ) : (
+            <Configuracoes user={user} onItensChange={carregarItens} />
+          )}
+        </div>
       </div>
-      <BottomNav active={view} onChange={setView} />
     </div>
   );
 }
