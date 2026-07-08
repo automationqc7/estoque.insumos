@@ -3,14 +3,18 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Estoque de Insumos</title>
+<title>Gestão de Insumos</title>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
 <div id="root"></div>
+
 <!-- React -->
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -20,23 +24,25 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
 <script src="supabaseConfig.js"></script>
 <script>
- // Carrega e transpila o app.js manualmente (em vez de usar data-presets,
- // que não aceita opções como "runtime: classic" via atributo HTML).
- fetch('app.js')
-   .then(function (r) { return r.text(); })
-   .then(function (code) {
-     var output = Babel.transform(code, {
-       presets: [["react", { runtime: "classic" }]]
-     }).code;
-     var script = document.createElement('script');
-     script.text = output;
-     document.body.appendChild(script);
-   })
-   .catch(function (err) {
-     console.error('Erro ao carregar app.js:', err);
-   });
+  // Carrega e transpila o app.js manualmente (em vez de usar data-presets,
+  // que não aceita opções como "runtime: classic" via atributo HTML).
+  fetch('app.js')
+    .then(function (r) { return r.text(); })
+    .then(function (code) {
+      var output = Babel.transform(code, {
+        presets: [["react", { runtime: "classic" }]]
+      }).code;
+      var script = document.createElement('script');
+      script.text = output;
+      document.body.appendChild(script);
+    })
+    .catch(function (err) {
+      console.error('Erro ao carregar app.js:', err);
+    });
 </script>
+
 </body>
 </html>
