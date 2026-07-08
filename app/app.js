@@ -806,7 +806,7 @@ function Estoque() {
         <div className="table-wrap">
           <table className="data-table">
             <thead>
-              <tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Recebido</th><th>Consumido</th><th>Estoque</th><th>Mínimo</th><th>Status</th></tr>
+              <tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Recebido</th><th>Consumido</th><th>Estoque</th><th>Mínimo</th><th title="Média de saídas por mês nos últimos 12 meses">Consumo médio/mês</th><th title="Média de dias entre a reserva e o recebimento">Entrega média (dias)</th><th>Status</th></tr>
             </thead>
             <tbody>
               {filtrado.map((i) => (
@@ -818,6 +818,8 @@ function Estoque() {
                   <td>{fmtNum(i.total_consumido)}</td>
                   <td><strong>{fmtNum(i.estoque_atual)}</strong></td>
                   <td>{fmtNum(i.estoque_minimo)}</td>
+                  <td>{i.consumo_medio_mensal != null ? fmtNum(i.consumo_medio_mensal) : "—"}</td>
+                  <td>{i.tempo_medio_entrega_dias != null ? `${fmtNum(i.tempo_medio_entrega_dias)} d` : "—"}</td>
                   <td>
                     {i.status === "CRITICO"
                       ? <span className="badge badge-critical">Crítico</span>
@@ -826,7 +828,7 @@ function Estoque() {
                 </tr>
               ))}
               {!loading && filtrado.length === 0 && (
-                <tr><td colSpan="8"><div className="empty-state">Nenhum item encontrado.</div></td></tr>
+                <tr><td colSpan="10"><div className="empty-state">Nenhum item encontrado.</div></td></tr>
               )}
             </tbody>
           </table>
