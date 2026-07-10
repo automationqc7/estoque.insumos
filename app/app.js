@@ -168,13 +168,15 @@ function ForcePasswordChange({ user, onDone }) {
 // ============================================================================
 const APP_NAME = "Gestão de Insumos";
 
-// Ícone da aplicação: cubo/caixa de insumo desenhado em SVG.
+// Ícone da aplicação: caixa de papelão 3D.
 function CubeIcon({ size = 22 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 2.5l8 4.5v9l-8 4.5-8-4.5v-9l8-4.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" fill="currentColor" fillOpacity="0.12"/>
-      <path d="M4 7l8 4.5L20 7" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
-      <path d="M12 11.5V21" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+      <path d="M12 2.6l8.5 4.4v9.9L12 21.4 3.5 16.9V7L12 2.6z" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M3.6 7L12 11.4 20.4 7" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M12 11.4V21.4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M9 4.1l8.4 4.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
+      <rect x="10.4" y="12.7" width="3.2" height="1.8" rx="0.4" fill="currentColor" opacity="0.55"/>
     </svg>
   );
 }
@@ -206,16 +208,22 @@ function TopBar({ user, onLogout }) {
         {APP_NAME}
       </div>
       <div className="topbar-user">
-        <span>{user.nome} · {user.pn}</span>
-        <button onClick={onLogout}>Sair</button>
+        <span className="user-pill">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          {user.nome}
+        </span>
+        <button onClick={onLogout} title="Sair">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sair
+        </button>
       </div>
     </div>
   );
 }
 
-function SideNav({ active, onChange }) {
+function TopNav({ active, onChange }) {
   return (
-    <nav className="sidenav">
+    <nav className="topnav">
       {NAV_ITEMS.map((item) => (
         <button
           key={item.key}
@@ -279,8 +287,28 @@ function Dashboard({ user, onNavigate }) {
       data: {
         labels,
         datasets: [
-          { label: "Estoque atual", data: atual, backgroundColor: "#0071e3", borderRadius: 6, maxBarThickness: 26 },
-          { label: "Estoque mínimo", data: minimo, backgroundColor: CHART_COLORS.red, borderRadius: 6, maxBarThickness: 26 },
+          {
+            label: "Estoque atual",
+            data: atual,
+            backgroundColor: "#0071e3",
+            borderRadius: 4,
+            maxBarThickness: 30,
+            order: 2,
+          },
+          {
+            // Estoque mínimo como marcadores (traço vermelho) sobre cada barra
+            label: "Estoque mínimo",
+            type: "line",
+            data: minimo,
+            showLine: false,
+            pointStyle: "line",
+            pointRadius: 14,
+            pointBorderColor: CHART_COLORS.red,
+            pointBackgroundColor: CHART_COLORS.red,
+            pointBorderWidth: 3,
+            rotation: 90,
+            order: 1,
+          },
         ],
       },
       options: {
@@ -289,7 +317,7 @@ function Dashboard({ user, onNavigate }) {
         plugins: { legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter" } } } },
         scales: {
           x: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
-          y: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" } } },
+          y: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" } }, beginAtZero: true },
         },
       },
     });
@@ -427,18 +455,24 @@ function ReservaRecebimento({ user, itens }) {
           <table className="data-table sticky-head">
             <thead>
               <tr>
-                <th>Data</th><th>Código</th><th>Item</th><th>Qtd.</th>
-                <th>Reserva</th><th>Laudo</th><th>Recebido</th><th>Pendência</th><th>Resp. recebimento</th><th></th>
+                <th>Data Reserva</th><th>Responsável</th><th>Código</th><th>Descrição</th><th>Quant.</th><th>Un.</th>
+                <th>C/C</th><th>Reserva</th><th>Data da Entrega</th><th>Laudo</th><th>Qtd. Recebida</th><th>Pendência</th><th>Resp. Recebimento</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {filtrado.map((m) => (
+              {filtrado.map((m) => {
+                const solicitante = (m.observacoes || "").replace(/^Solicitado por\s*/i, "") || "—";
+                return (
                 <tr key={m.id}>
                   <td>{fmtDate(m.data_movimento)}</td>
+                  <td>{solicitante}</td>
                   <td>{m.codigo}</td>
                   <td>{(itens[m.codigo] || {}).descricao || "—"}</td>
                   <td>{fmtNum(m.quantidade)}</td>
+                  <td>{m.unidade || (itens[m.codigo] || {}).unidade || "—"}</td>
+                  <td>{m.centro_custo || "—"}</td>
                   <td>{m.numero_reserva || "—"}</td>
+                  <td>{m.data_entrega ? fmtDate(m.data_entrega) : "—"}</td>
                   <td>
                     {m.laudo === "Aprovado" ? <span className="badge badge-ok">Aprovado</span>
                       : m.laudo ? <span className="badge badge-neutral">{m.laudo}</span>
@@ -455,9 +489,9 @@ function ReservaRecebimento({ user, itens }) {
                     ) : "—"}
                   </td>
                 </tr>
-              ))}
+              );})}
               {!loading && filtrado.length === 0 && (
-                <tr><td colSpan="10"><div className="empty-state">Nenhuma reserva encontrada.</div></td></tr>
+                <tr><td colSpan="14"><div className="empty-state">Nenhuma reserva encontrada.</div></td></tr>
               )}
             </tbody>
           </table>
@@ -561,6 +595,22 @@ function ItemSearchSelect({ itens, value, onChange }) {
 }
 
 const LOCAIS_DESTINO = ["Laminação", "Tratamento Térmico", "Flex Line", "Fast Casing", "Fábrica de Luvas"];
+
+const UNIDADES = ["pç", "lt", "un", "kg", "cj"];
+
+// Ícones de ação (lápis, lixo, chave) no mesmo estilo visual
+function IconButton({ kind, title, onClick }) {
+  const icons = {
+    edit: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>,
+    delete: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+    key: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>,
+  };
+  return (
+    <button className={`icon-btn icon-btn-${kind}`} title={title} onClick={onClick} type="button">
+      {icons[kind]}
+    </button>
+  );
+}
 
 function NovaReservaModal({ user, itens, onClose, onSaved }) {
   const [codigo, setCodigo] = useState("");
@@ -742,6 +792,7 @@ function Saida({ user, itens }) {
   const [lista, setLista] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [nomesPorPn, setNomesPorPn] = useState({});
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -750,8 +801,16 @@ function Saida({ user, itens }) {
       .select("*")
       .eq("tipo", "saida")
       .order("data_movimento", { ascending: false })
-      .limit(80);
+      .limit(200);
     setLista(data || []);
+    // resolve nomes dos usuários que registraram
+    const pns = Array.from(new Set((data || []).map((m) => m.usuario_pn).filter(Boolean)));
+    if (pns.length > 0) {
+      const { data: us } = await sb.from("usuarios").select("pn, nome").in("pn", pns);
+      const map = {};
+      (us || []).forEach((u) => { map[u.pn] = u.nome; });
+      setNomesPorPn(map);
+    }
     setLoading(false);
   }, []);
 
@@ -769,26 +828,27 @@ function Saida({ user, itens }) {
 
       <div className="card section">
         <h2 style={{ marginBottom: 14 }}>Últimas saídas</h2>
-        <div className="table-wrap">
-          <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table sticky-head">
             <thead>
-              <tr><th>Data</th><th>Código</th><th>Item</th><th>Qtd.</th><th>Turno</th><th>Local</th><th>Motivo</th><th>Registrado por</th></tr>
+              <tr><th>Data</th><th>Turno</th><th>Código</th><th>Descrição</th><th>Quant.</th><th>Un.</th><th>Local</th><th>Motivo</th><th>Registrado por</th></tr>
             </thead>
             <tbody>
               {lista.map((m) => (
                 <tr key={m.id}>
                   <td>{fmtDate(m.data_movimento)}</td>
+                  <td>{m.turno || "—"}</td>
                   <td>{m.codigo}</td>
                   <td>{(itens[m.codigo] || {}).descricao || "—"}</td>
                   <td>{fmtNum(m.quantidade)}</td>
-                  <td>{m.turno || "—"}</td>
+                  <td>{m.unidade || (itens[m.codigo] || {}).unidade || "—"}</td>
                   <td>{m.local_destino || "—"}</td>
                   <td>{m.motivo || "—"}</td>
-                  <td>{m.usuario_pn || "—"}</td>
+                  <td>{m.usuario_pn ? (nomesPorPn[m.usuario_pn] || m.usuario_pn) : "—"}</td>
                 </tr>
               ))}
               {!loading && lista.length === 0 && (
-                <tr><td colSpan="8"><div className="empty-state">Nenhuma saída registrada ainda.</div></td></tr>
+                <tr><td colSpan="9"><div className="empty-state">Nenhuma saída registrada ainda.</div></td></tr>
               )}
             </tbody>
           </table>
@@ -826,6 +886,7 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
       tipo: "saida",
       codigo,
       quantidade: Number(quantidade),
+      unidade: (itens[codigo] || {}).unidade || null,
       turno,
       local_destino: local,
       motivo,
@@ -873,6 +934,7 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
               <label>Motivo</label>
               <select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
                 <option>Consumo</option>
+                <option>Correção Estoque</option>
                 <option>Perda</option>
                 <option>Avaria</option>
                 <option>Empréstimo</option>
@@ -1019,6 +1081,7 @@ function labelMes(ym) {
 
 function DashboardAnalytics({ itens }) {
   const [movs, setMovs] = useState([]);
+  const [estoque, setEstoque] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // filtros
@@ -1037,6 +1100,8 @@ function DashboardAnalytics({ itens }) {
       .order("data_movimento", { ascending: true })
       .limit(20000);
     setMovs(data || []);
+    const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual").order("estoque_atual", { ascending: false });
+    setEstoque(est || []);
     setLoading(false);
   }, []);
 
@@ -1106,6 +1171,16 @@ function DashboardAnalytics({ itens }) {
       .slice(0, 12);
   }, [filtrado, itens]);
 
+  // 5) quantidade disponível em estoque por produto (respeita filtro de código)
+  const estoquePorProduto = useMemo(() => {
+    let base = estoque.filter((e) => Number(e.estoque_atual) > 0);
+    if (fCodigo) base = base.filter((e) => `${e.codigo}` === `${fCodigo}`);
+    return base
+      .sort((a, b) => Number(b.estoque_atual) - Number(a.estoque_atual))
+      .slice(0, 15)
+      .map((e) => ({ nome: (e.descricao || e.codigo).slice(0, 26), valor: Number(e.estoque_atual) }));
+  }, [estoque, fCodigo]);
+
   const baseOptions = {
     plugins: { legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 11 } } } },
     scales: {
@@ -1170,7 +1245,7 @@ function DashboardAnalytics({ itens }) {
       ) : (
         <div className="dash-grid">
           <div className="card section">
-            <h2 style={{ marginBottom: 16 }}>Itens requisitados (reserva) por mês</h2>
+            <h2 style={{ marginBottom: 16 }}>Itens adquiridos (entrada)</h2>
             {reservasPorMes.length === 0 ? <div className="empty-state">Sem dados para os filtros.</div> : (
               <ChartBox
                 type="bar"
@@ -1184,7 +1259,7 @@ function DashboardAnalytics({ itens }) {
           </div>
 
           <div className="card section">
-            <h2 style={{ marginBottom: 16 }}>Itens consumidos (saída) por mês</h2>
+            <h2 style={{ marginBottom: 16 }}>Itens consumidos (saída)</h2>
             {saidasPorMes.length === 0 ? <div className="empty-state">Sem dados para os filtros.</div> : (
               <ChartBox
                 type="bar"
@@ -1198,7 +1273,7 @@ function DashboardAnalytics({ itens }) {
           </div>
 
           <div className="card section">
-            <h2 style={{ marginBottom: 16 }}>Consumo por área por mês</h2>
+            <h2 style={{ marginBottom: 16 }}>Consumo por gerência</h2>
             {consumoAreaMes.meses.length === 0 ? <div className="empty-state">Sem dados para os filtros.</div> : (
               <ChartBox
                 type="bar"
@@ -1224,7 +1299,7 @@ function DashboardAnalytics({ itens }) {
           </div>
 
           <div className="card section">
-            <h2 style={{ marginBottom: 16 }}>Itens mais consumidos</h2>
+            <h2 style={{ marginBottom: 16 }}>Itens consumidos</h2>
             {itensMaisConsumidos.length === 0 ? <div className="empty-state">Sem dados para os filtros.</div> : (
               <ChartBox
                 type="bar"
@@ -1232,6 +1307,27 @@ function DashboardAnalytics({ itens }) {
                 data={{
                   labels: itensMaisConsumidos.map((i) => (i.nome || i.codigo).slice(0, 28)),
                   datasets: [{ label: "Consumido", data: itensMaisConsumidos.map((i) => i.valor), backgroundColor: CHART_COLORS.accentSoft, borderRadius: 6, maxBarThickness: 22 }],
+                }}
+                options={{
+                  indexAxis: "y",
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    x: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" } }, beginAtZero: true },
+                    y: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
+                  },
+                }}
+              />
+            )}
+          </div>
+          <div className="card section" style={{ gridColumn: "1 / -1" }}>
+            <h2 style={{ marginBottom: 16 }}>Itens disponíveis em estoque, por produto</h2>
+            {estoquePorProduto.length === 0 ? <div className="empty-state">Sem itens com saldo em estoque.</div> : (
+              <ChartBox
+                type="bar"
+                height={Math.max(300, estoquePorProduto.length * 30)}
+                data={{
+                  labels: estoquePorProduto.map((i) => i.nome),
+                  datasets: [{ label: "Em estoque", data: estoquePorProduto.map((i) => i.valor), backgroundColor: "#0071e3", borderRadius: 6, maxBarThickness: 22 }],
                 }}
                 options={{
                   indexAxis: "y",
@@ -1341,8 +1437,10 @@ function ProdutosConfig({ onItensChange }) {
                 <td>{p.unidade}</td>
                 <td>{fmtNum(p.estoque_minimo)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12.5, marginRight: 6 }} onClick={() => setEditando(p)}>Editar</button>
-                  <button className="btn btn-danger" style={{ padding: "6px 12px", fontSize: 12.5 }} onClick={() => setExcluindo(p)}>Excluir</button>
+                  <div className="icon-actions">
+                    <IconButton kind="edit" title="Editar" onClick={() => setEditando(p)} />
+                    <IconButton kind="delete" title="Excluir" onClick={() => setExcluindo(p)} />
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1375,7 +1473,10 @@ function ProdutoModal({ produto, onClose, onSaved }) {
   const editMode = !!produto;
   const [codigo, setCodigo] = useState(produto ? produto.codigo : "");
   const [descricao, setDescricao] = useState(produto ? produto.descricao || "" : "");
-  const [unidade, setUnidade] = useState(produto ? produto.unidade || "un" : "un");
+  const [unidade, setUnidade] = useState(() => {
+    const u = produto ? (produto.unidade || "un") : "un";
+    return UNIDADES.includes(u) ? u : "un";
+  });
   const [minimo, setMinimo] = useState(produto ? produto.estoque_minimo : "");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -1413,7 +1514,9 @@ function ProdutoModal({ produto, onClose, onSaved }) {
           <div className="form-row">
             <div className="field">
               <label>Unidade</label>
-              <input type="text" value={unidade} onChange={(e) => setUnidade(e.target.value)} placeholder="un, pç, lt…" />
+              <select value={unidade} onChange={(e) => setUnidade(e.target.value)}>
+                {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
             </div>
             <div className="field">
               <label>Estoque mínimo</label>
@@ -1470,11 +1573,13 @@ function UsuariosConfig({ user }) {
                   : <span className="badge badge-ok">Ativo</span>}
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: 12.5, marginRight: 6 }} onClick={() => setEditando(u)}>Editar</button>
-                  <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: 12.5, marginRight: 6 }} onClick={() => setResetando(u)}>Resetar senha</button>
-                  {u.pn !== user.pn && (
-                    <button className="btn btn-danger" style={{ padding: "6px 10px", fontSize: 12.5 }} onClick={() => setExcluindo(u)}>Excluir</button>
-                  )}
+                  <div className="icon-actions">
+                    <IconButton kind="key" title="Resetar senha" onClick={() => setResetando(u)} />
+                    <IconButton kind="edit" title="Editar" onClick={() => setEditando(u)} />
+                    {u.pn !== user.pn && (
+                      <IconButton kind="delete" title="Excluir" onClick={() => setExcluindo(u)} />
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1712,25 +1817,23 @@ function App() {
   return (
     <div className="app-shell">
       <TopBar user={user} onLogout={handleLogout} />
-      <div className="app-body">
-        <SideNav active={view} onChange={setView} />
-        <div className="content">
-          {!itensLoaded ? (
-            <div className="loading-screen">Carregando…</div>
-          ) : view === "inicio" ? (
-            <Dashboard user={user} onNavigate={setView} />
-          ) : view === "dashboard" ? (
-            <DashboardAnalytics itens={itens} />
-          ) : view === "reserva" ? (
-            <ReservaRecebimento user={user} itens={itens} />
-          ) : view === "saida" ? (
-            <Saida user={user} itens={itens} />
-          ) : view === "estoque" ? (
-            <Estoque />
-          ) : (
-            <Configuracoes user={user} onItensChange={carregarItens} />
-          )}
-        </div>
+      <TopNav active={view} onChange={setView} />
+      <div className="content">
+        {!itensLoaded ? (
+          <div className="loading-screen">Carregando…</div>
+        ) : view === "inicio" ? (
+          <Dashboard user={user} onNavigate={setView} />
+        ) : view === "dashboard" ? (
+          <DashboardAnalytics itens={itens} />
+        ) : view === "reserva" ? (
+          <ReservaRecebimento user={user} itens={itens} />
+        ) : view === "saida" ? (
+          <Saida user={user} itens={itens} />
+        ) : view === "estoque" ? (
+          <Estoque />
+        ) : (
+          <Configuracoes user={user} onItensChange={carregarItens} />
+        )}
       </div>
     </div>
   );
