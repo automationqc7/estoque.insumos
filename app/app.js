@@ -536,7 +536,7 @@ function ItemSelect({ itens, value, onChange }) {
 }
 
 // Campo de busca por descrição, com lista suspensa filtrada pelo que é digitado.
-function ItemSearchSelect({ itens, value, onChange }) {
+function ItemSearchSelect({ itens, value, onChange, allowClear = false, placeholder }) {
   const [texto, setTexto] = useState("");
   const [aberto, setAberto] = useState(false);
   const wrapRef = useRef(null);
@@ -548,7 +548,8 @@ function ItemSearchSelect({ itens, value, onChange }) {
 
   // Quando um item já está selecionado, mostra sua descrição no campo.
   useEffect(() => {
-    if (value && itens[value]) setTexto(itens[value].descricao || value);
+    if (value && itens[value]) setTexto(`${itens[value].descricao || ""} (${value})`);
+    else if (!value) setTexto("");
   }, [value, itens]);
 
   // Fecha a lista ao clicar fora.
@@ -562,10 +563,10 @@ function ItemSearchSelect({ itens, value, onChange }) {
 
   const filtrados = useMemo(() => {
     const q = texto.trim().toLowerCase();
-    if (!q) return options.slice(0, 30);
+    if (!q) return options.slice(0, 40);
     return options
-      .filter((it) => (it.descricao || "").toLowerCase().includes(q) || `${it.codigo}`.includes(q))
-      .slice(0, 30);
+      .filter((it) => (it.descricao || "").toLowerCase().includes(q) || `${it.codigo}`.toLowerCase().includes(q))
+      .slice(0, 40);
   }, [texto, options]);
 
   return (
@@ -573,25 +574,28 @@ function ItemSearchSelect({ itens, value, onChange }) {
       <input
         type="text"
         value={texto}
-        placeholder="Digite a descrição do item…"
+        placeholder={placeholder || "Buscar por código ou descrição…"}
         onChange={(e) => { setTexto(e.target.value); setAberto(true); if (value) onChange(""); }}
         onFocus={() => setAberto(true)}
       />
-      {aberto && filtrados.length > 0 && (
+      {aberto && (
         <ul className="combo-list">
+          {allowClear && (
+            <li className="combo-clear" onMouseDown={() => { onChange(""); setTexto(""); setAberto(false); }}>
+              Todos
+            </li>
+          )}
           {filtrados.map((it) => (
             <li
               key={it.codigo}
-              onMouseDown={() => { onChange(it.codigo); setTexto(it.descricao || it.codigo); setAberto(false); }}
+              onMouseDown={() => { onChange(it.codigo); setTexto(`${it.descricao || ""} (${it.codigo})`); setAberto(false); }}
             >
               <strong>{it.descricao || "(sem descrição)"}</strong>
               <span className="combo-code">{it.codigo}</span>
             </li>
           ))}
+          {filtrados.length === 0 && <li className="combo-empty">Nenhum item encontrado</li>}
         </ul>
-      )}
-      {aberto && filtrados.length === 0 && (
-        <ul className="combo-list"><li className="combo-empty">Nenhum item encontrado</li></ul>
       )}
     </div>
   );
@@ -1215,13 +1219,8 @@ function DashboardAnalytics({ itens }) {
             </select>
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
-            <label>Código do item</label>
-            <select value={fCodigo} onChange={(e) => setFCodigo(e.target.value)}>
-              <option value="">Todos</option>
-              {codigosDisponiveis.map((it) => (
-                <option key={it.codigo} value={it.codigo}>{it.codigo} — {(it.descricao || "").slice(0, 30)}</option>
-              ))}
-            </select>
+            <label>Código ou descrição do item</label>
+            <ItemSearchSelect itens={itens} value={fCodigo} onChange={setFCodigo} allowClear />
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Data inicial</label>
