@@ -205,7 +205,10 @@ function TopBar({ user, onLogout }) {
     <div className="topbar">
       <div className="topbar-brand">
         <span className="brand-icon"><CubeIcon size={20} /></span>
-        {APP_NAME}
+        <span className="brand-text">
+          {APP_NAME}
+          <span className="brand-sub">Controle da Qualidade - Área Quente</span>
+        </span>
       </div>
       <div className="topbar-user">
         <span className="user-pill">
