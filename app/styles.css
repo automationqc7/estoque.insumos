@@ -190,9 +190,9 @@ button, input, select {
 /* ---------------------------------------------------------------- generic */
 
 h1, h2, h3 { letter-spacing: -0.02em; margin: 0; }
-h1 { font-size: 21px; font-weight: 700; }
-h2 { font-size: 15px; font-weight: 700; }
-h3 { font-size: 13.5px; font-weight: 600; }
+h1 { font-size: 18px; font-weight: 700; }
+h2 { font-size: 14px; font-weight: 700; }
+h3 { font-size: 13px; font-weight: 600; }
 
 .page-header {
   margin-bottom: 22px;
@@ -283,8 +283,8 @@ h3 { font-size: 13.5px; font-weight: 600; }
 .btn {
   border: none;
   border-radius: var(--radius-sm);
-  padding: 11px 20px;
-  font-size: 14.5px;
+  padding: 8px 15px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   transition: background .15s ease, transform .1s ease;
@@ -301,17 +301,18 @@ h3 { font-size: 13.5px; font-weight: 600; }
 .btn-full { width: 100%; }
 
 /* botões de ação em ícone (editar/excluir/chave) */
-.icon-actions { display: inline-flex; gap: 8px; align-items: center; }
+.icon-actions { display: inline-flex; gap: 6px; align-items: center; }
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px; height: 34px;
-  border-radius: 10px;
+  width: 27px; height: 27px;
+  border-radius: 8px;
   border: none;
   cursor: pointer;
   transition: background .15s ease, transform .1s ease;
 }
+.icon-btn svg { width: 13px; height: 13px; }
 .icon-btn:active { transform: scale(0.94); }
 .icon-btn-edit { background: rgba(0,113,227,0.10); color: #0071e3; }
 .icon-btn-edit:hover { background: rgba(0,113,227,0.18); }
@@ -394,27 +395,27 @@ h3 { font-size: 13.5px; font-weight: 600; }
 }
 .table-scroll.tall { max-height: 620px; }
 
-table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.data-table th {
   text-align: left;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-tertiary);
   font-weight: 600;
-  padding: 9px 11px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 table.data-table td {
-  padding: 10px 11px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
 }
 /* garante que a coluna Descrição use o mesmo tamanho das demais */
-table.data-table td, table.data-table th { font-size: 13px; }
-table.data-table th { font-size: 11px; }
+table.data-table td, table.data-table th { font-size: 12px; }
+table.data-table th { font-size: 10px; }
 table.data-table tr:last-child td { border-bottom: none; }
 table.data-table tr.row-critical td { background: var(--critical-bg); }
 
