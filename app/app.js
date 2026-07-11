@@ -190,14 +190,14 @@ const NAV_ITEMS = [
   { key: "config", label: "Config.", icon: "⚙️" },
 ];
 
-// Cores do tema (papelão) usadas nos gráficos
+// Cores do tema — gráficos em tons de azul
 const CHART_COLORS = {
-  accent: "#a9713f",
-  accentSoft: "#c69a6d",
-  green: "#7a9b5e",
+  accent: "#0071e3",
+  accentSoft: "#4a9eea",
+  green: "#2a7ab5",
   red: "#c0522f",
-  blue: "#6b8ba4",
-  palette: ["#a9713f", "#c69a6d", "#7a9b5e", "#6b8ba4", "#c0522f", "#8a6d3b", "#a39278", "#d0a878"],
+  blue: "#0071e3",
+  palette: ["#0a4d8c", "#0071e3", "#3d8fdc", "#5aa9e6", "#7cbde8", "#9bcdef", "#2a6aa0", "#b6ddf5"],
 };
 
 function TopBar({ user, onLogout }) {
@@ -291,25 +291,28 @@ function Dashboard({ user, onNavigate }) {
         labels,
         datasets: [
           {
-            label: "Estoque atual",
-            data: atual,
-            backgroundColor: "#0071e3",
-            borderRadius: 4,
-            maxBarThickness: 30,
+            // "Recipiente": contorno vermelho fino = nível do estoque mínimo
+            label: "Estoque mínimo",
+            data: minimo,
+            backgroundColor: "rgba(192, 82, 47, 0.04)",
+            borderColor: CHART_COLORS.red,
+            borderWidth: { top: 1.5, left: 1.5, right: 1.5, bottom: 0 },
+            borderSkipped: false,
+            borderRadius: 3,
+            categoryPercentage: 0.6,
+            barPercentage: 0.9,
+            grouped: false,
             order: 2,
           },
           {
-            // Estoque mínimo como marcadores (traço vermelho) sobre cada barra
-            label: "Estoque mínimo",
-            type: "line",
-            data: minimo,
-            showLine: false,
-            pointStyle: "line",
-            pointRadius: 14,
-            pointBorderColor: CHART_COLORS.red,
-            pointBackgroundColor: CHART_COLORS.red,
-            pointBorderWidth: 3,
-            rotation: 90,
+            // Preenchimento azul = estoque atual (sobe até o nível atual)
+            label: "Estoque atual",
+            data: atual,
+            backgroundColor: "#0071e3",
+            borderRadius: 3,
+            categoryPercentage: 0.6,
+            barPercentage: 0.62,
+            grouped: false,
             order: 1,
           },
         ],
@@ -1209,7 +1212,7 @@ function DashboardAnalytics({ itens }) {
       </div>
 
       {/* Filtros */}
-      <div className="card section" style={{ marginBottom: 20 }}>
+      <div className="card section filtros-card" style={{ marginBottom: 20 }}>
         <div className="filtros-grid">
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Local (destino)</label>
