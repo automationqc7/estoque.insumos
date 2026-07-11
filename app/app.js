@@ -1,5 +1,17 @@
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
+// Renderiza o conteúdo do modal direto no <body> (via portal), garantindo que
+// ele sempre fique acima de qualquer card/tabela, sem sofrer com z-index preso
+// dentro de outro elemento.
+function Modal({ onClose, children }) {
+  return ReactDOM.createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const SESSION_KEY = "estoque_insumos_session";
@@ -657,7 +669,7 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>Nova reserva</h2>
         <div className="subtitle">Registrada por {user.nome}</div>
@@ -703,7 +715,7 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -758,7 +770,7 @@ function ConfirmarRecebimentoModal({ movimento, user, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>Confirmar recebimento</h2>
         <div className="subtitle">
@@ -791,7 +803,7 @@ function ConfirmarRecebimentoModal({ movimento, user, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -908,7 +920,7 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>Registrar saída</h2>
         <div className="subtitle">Registrado por {user.nome}</div>
@@ -958,7 +970,7 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1498,7 +1510,7 @@ function ProdutoModal({ produto, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>{editMode ? "Editar produto" : "Novo produto"}</h2>
         {erro && <div className="login-error">{erro}</div>}
@@ -1529,7 +1541,7 @@ function ProdutoModal({ produto, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1639,7 +1651,7 @@ function EditarUsuarioModal({ usuario, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>Editar usuário</h2>
         <div className="subtitle">PN {usuario.pn}</div>
@@ -1659,7 +1671,7 @@ function EditarUsuarioModal({ usuario, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1667,7 +1679,7 @@ function EditarUsuarioModal({ usuario, onClose, onSaved }) {
 function ConfirmModal({ titulo, mensagem, onClose, onConfirm }) {
   const [processando, setProcessando] = useState(false);
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>{titulo}</h2>
         <p className="subtitle" style={{ marginTop: 8 }}>{mensagem}</p>
@@ -1682,7 +1694,7 @@ function ConfirmModal({ titulo, mensagem, onClose, onConfirm }) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1741,7 +1753,7 @@ function NovoUsuarioModal({ onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <Modal onClose={onClose}>
       <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
         <h2>Novo usuário</h2>
         <div className="subtitle">A senha inicial será <strong>1234</strong>, com troca obrigatória no 1º acesso.</div>
@@ -1762,7 +1774,7 @@ function NovoUsuarioModal({ onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 
