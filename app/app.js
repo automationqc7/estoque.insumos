@@ -172,11 +172,11 @@ const APP_NAME = "Gestão de Insumos";
 function CubeIcon({ size = 22 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 2.6l8.5 4.4v9.9L12 21.4 3.5 16.9V7L12 2.6z" fill="#c89a6a" stroke="#8a5a2e" strokeWidth="1.5" strokeLinejoin="round"/>
-      <path d="M3.6 7L12 11.4 20.4 7" stroke="#8a5a2e" strokeWidth="1.5" strokeLinejoin="round"/>
-      <path d="M12 11.4V21.4" stroke="#8a5a2e" strokeWidth="1.5" strokeLinejoin="round"/>
-      <path d="M9 4.1l8.4 4.4" stroke="#8a5a2e" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
-      <rect x="10.4" y="12.7" width="3.2" height="1.8" rx="0.4" fill="#8a5a2e" opacity="0.6"/>
+      <path d="M12 2.6l8.5 4.4v9.9L12 21.4 3.5 16.9V7L12 2.6z" fill="#c89a6a" stroke="#7a4e28" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M3.6 7L12 11.4 20.4 7" stroke="#7a4e28" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M12 11.4V21.4" stroke="#7a4e28" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M9 4.1l8.4 4.4" stroke="#7a4e28" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
+      <rect x="10.4" y="12.7" width="3.2" height="1.8" rx="0.4" fill="#7a4e28" opacity="0.6"/>
     </svg>
   );
 }
