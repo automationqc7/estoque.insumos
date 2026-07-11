@@ -79,7 +79,6 @@ function LoginScreen({ onLogin }) {
       <div className="card login-card">
         <div className="login-logo"><CubeIcon size={26} /></div>
         <h1 className="login-title">Sto<span className="brand-q">Q</span>•room</h1>
-        <div className="login-tagline">Gerenciamento de insumos</div>
         <div className="login-tagline2" style={{ marginBottom: 26 }}>Qualidade Área Quente</div>
         {erro && <div className="login-error">{erro}</div>}
         <form onSubmit={handleSubmit}>
@@ -219,8 +218,7 @@ function TopBar({ user, onLogout }) {
       <div className="topbar-brand">
         <span className="brand-icon"><CubeIcon size={20} /></span>
         <span className="brand-text">
-          <span className="brand-name">Sto<span className="brand-q">Q</span>-room</span>
-          <span className="brand-sub">Gerenciamento de insumo</span>
+          <span className="brand-name">Sto<span className="brand-q">Q</span>•room</span>
           <span className="brand-sub2">Qualidade Área Quente</span>
         </span>
       </div>
