@@ -78,8 +78,9 @@ function LoginScreen({ onLogin }) {
     <div className="login-screen">
       <div className="card login-card">
         <div className="login-logo"><CubeIcon size={26} /></div>
-        <h1>Gestão de Insumos</h1>
-        <div className="subtitle">Entre com seu PN e senha</div>
+        <h1 className="login-title">Sto<span className="brand-q">Q</span>-room</h1>
+        <div className="login-tagline">Gerenciamento de insumo</div>
+        <div className="login-tagline2" style={{ marginBottom: 26 }}>Qualidade Área Quente</div>
         {erro && <div className="login-error">{erro}</div>}
         <form onSubmit={handleSubmit}>
           <div className="field">
@@ -178,7 +179,7 @@ function ForcePasswordChange({ user, onDone }) {
 // ============================================================================
 // NAVEGAÇÃO
 // ============================================================================
-const APP_NAME = "Gestão de Insumos";
+const APP_NAME = "StoQ-room";
 
 // Ícone da aplicação: caixa de papelão 3D (preenchida, para fundo claro).
 function CubeIcon({ size = 22 }) {
@@ -218,8 +219,9 @@ function TopBar({ user, onLogout }) {
       <div className="topbar-brand">
         <span className="brand-icon"><CubeIcon size={20} /></span>
         <span className="brand-text">
-          {APP_NAME}
-          <span className="brand-sub">Controle da Qualidade - Área Quente</span>
+          <span className="brand-name">Sto<span className="brand-q">Q</span>-room</span>
+          <span className="brand-sub">Gerenciamento de insumo</span>
+          <span className="brand-sub2">Qualidade Área Quente</span>
         </span>
       </div>
       <div className="topbar-user">
