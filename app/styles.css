@@ -92,11 +92,23 @@ button, input, select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px; height: 30px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #fff;
+  width: 32px; height: 32px;
+  border-radius: 11px;
+  background: linear-gradient(160deg, #fdfbf8 0%, #f0e7db 100%);
+  border: 1px solid rgba(0,0,0,0.05);
+  box-shadow:
+    0 4px 8px rgba(169,113,63,0.22),
+    inset 0 1px 1px rgba(255,255,255,0.9);
+  position: relative;
 }
+.topbar-brand .brand-icon::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 11px;
+  background: linear-gradient(160deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0) 45%);
+  pointer-events: none;
+}
+.topbar-brand .brand-icon svg { position: relative; z-index: 1; }
 
 .topbar-user {
   display: flex;
@@ -502,14 +514,28 @@ table.data-table.sticky-head thead th {
   padding: 40px 32px;
 }
 .login-logo {
-  width: 52px; height: 52px;
-  border-radius: 14px;
-  background: var(--accent);
+  width: 60px; height: 60px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #fdfbf8 0%, #f0e7db 100%);
+  border: 1px solid rgba(0,0,0,0.05);
   color: white;
   display: flex; align-items: center; justify-content: center;
   font-size: 24px;
   margin: 0 auto 20px;
+  position: relative;
+  box-shadow:
+    0 10px 20px rgba(169,113,63,0.28),
+    0 2px 4px rgba(0,0,0,0.06),
+    inset 0 1px 1px rgba(255,255,255,0.9);
 }
+.login-logo::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 42%);
+  pointer-events: none;
+}
+.login-logo svg { position: relative; z-index: 1; }
 .login-card h1 { text-align: center; font-size: 22px; margin-bottom: 4px; }
 .login-card .subtitle { text-align: center; color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
 .login-error {
