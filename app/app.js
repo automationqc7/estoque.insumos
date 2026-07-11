@@ -383,27 +383,6 @@ function Dashboard({ user, onNavigate }) {
         </div>
       </div>
 
-      <div className="grid-3" style={{ marginBottom: 24 }}>
-        <div className="card action-card tone-blue" onClick={() => onNavigate("reserva")}>
-          <div className="icon-badge">🧾</div>
-          <h3>Reserva / Recebimento</h3>
-          <p>Registre reservas de insumos e confirme o recebimento no almoxarifado.</p>
-          <span className="cta">Abrir →</span>
-        </div>
-        <div className="card action-card tone-dark" onClick={() => onNavigate("saida")}>
-          <div className="icon-badge">📤</div>
-          <h3>Saída de Insumo</h3>
-          <p>Registre o consumo de um item, por turno, local e motivo.</p>
-          <span className="cta">Abrir →</span>
-        </div>
-        <div className="card action-card tone-green" onClick={() => onNavigate("estoque")}>
-          <div className="icon-badge">📊</div>
-          <h3>Estoque</h3>
-          <p>Consulte a posição atual de cada item e compare com o mínimo.</p>
-          <span className="cta">Abrir →</span>
-        </div>
-      </div>
-
       <div className="card section">
         <div className="flex-between" style={{ marginBottom: 16 }}>
           <h2>Quantidade em estoque × estoque mínimo</h2>
