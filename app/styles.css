@@ -37,6 +37,7 @@ html, body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   height: 100%;
+  font-size: 13.5px;
 }
 
 #root { min-height: 100vh; display: flex; flex-direction: column; }
@@ -127,9 +128,9 @@ button, input, select {
 .content {
   flex: 1;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 32px 24px 60px;
+  padding: 26px 28px 56px;
   min-width: 0;
 }
 
@@ -153,18 +154,18 @@ button, input, select {
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 500;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
+  gap: 7px;
+  padding: 7px 13px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color .15s ease, background .15s ease;
 }
-.topnav button .icon { font-size: 16px; line-height: 1; }
+.topnav button .icon { font-size: 14px; line-height: 1; }
 .topnav button.active { color: var(--accent); background: var(--accent-tint-10); font-weight: 600; }
 .topnav button:hover:not(.active) { background: rgba(0,0,0,0.04); }
 
@@ -177,17 +178,17 @@ button, input, select {
 /* ---------------------------------------------------------------- generic */
 
 h1, h2, h3 { letter-spacing: -0.02em; margin: 0; }
-h1 { font-size: 30px; font-weight: 700; }
-h2 { font-size: 20px; font-weight: 700; }
-h3 { font-size: 15px; font-weight: 600; }
+h1 { font-size: 25px; font-weight: 700; }
+h2 { font-size: 17px; font-weight: 700; }
+h3 { font-size: 14px; font-weight: 600; }
 
 .page-header {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 .page-header p {
   margin: 6px 0 0;
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 13.5px;
 }
 
 .card {
@@ -381,27 +382,27 @@ h3 { font-size: 15px; font-weight: 600; }
 }
 .table-scroll.tall { max-height: 620px; }
 
-table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.data-table th {
   text-align: left;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-tertiary);
   font-weight: 600;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 table.data-table td {
-  padding: 12px;
+  padding: 10px 11px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13px;
 }
 /* garante que a coluna Descrição use o mesmo tamanho das demais */
-table.data-table td, table.data-table th { font-size: 14px; }
-table.data-table th { font-size: 12px; }
+table.data-table td, table.data-table th { font-size: 13px; }
+table.data-table th { font-size: 11px; }
 table.data-table tr:last-child td { border-bottom: none; }
 table.data-table tr.row-critical td { background: var(--critical-bg); }
 
