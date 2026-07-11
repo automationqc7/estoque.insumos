@@ -618,7 +618,7 @@ function ItemSearchSelect({ itens, value, onChange, allowClear = false, placehol
 
 const LOCAIS_DESTINO = ["Laminação", "Tratamento Térmico", "Flex Line", "Fast Casing", "Fábrica de Luvas"];
 
-const UNIDADES = ["pç", "lt", "un", "kg", "cj"];
+const UNIDADES = ["pç", "lt", "un", "kg", "cj", "fr", "cx"];
 
 // Ícones de ação (lápis, lixo, chave) no mesmo estilo visual
 function IconButton({ kind, title, onClick }) {
