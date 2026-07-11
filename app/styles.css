@@ -239,6 +239,8 @@ h3 { font-size: 13px; font-weight: 600; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
+  position: relative;
+  z-index: 1;
 }
 @media (max-width: 900px) {
   .dash-grid { grid-template-columns: 1fr; }
@@ -357,7 +359,7 @@ h3 { font-size: 13px; font-weight: 600; }
   position: absolute;
   top: calc(100% + 4px);
   left: 0; right: 0;
-  z-index: 30;
+  z-index: 200;
   margin: 0; padding: 4px;
   list-style: none;
   max-height: 240px;
@@ -370,11 +372,11 @@ h3 { font-size: 13px; font-weight: 600; }
 .combo-list li {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 9px 12px;
+  gap: 1px;
+  padding: 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
 }
 .combo-list li:hover { background: var(--accent-tint-08); }
 .combo-list li strong { font-weight: 500; }
@@ -390,7 +392,9 @@ h3 { font-size: 13px; font-weight: 600; }
 }
 
 /* filtros do dashboard — fonte ligeiramente menor */
+.filtros-card { position: relative; z-index: 50; overflow: visible; }
 .filtros-grid .field label { font-size: 11px; }
+.filtros-grid .combo-list li { font-size: 11.5px; }
 .filtros-grid .field input,
 .filtros-grid .field select,
 .filtros-grid .combo input {
@@ -563,9 +567,9 @@ table.data-table.sticky-head thead th {
 .tag-filter {
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.6);
-  padding: 6px 14px;
+  padding: 4px 11px;
   border-radius: 20px;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   color: var(--text-secondary);
