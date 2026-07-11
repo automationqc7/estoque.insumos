@@ -553,8 +553,8 @@ table.data-table.sticky-head thead th {
 .login-card h1 { text-align: center; font-size: 22px; margin-bottom: 4px; }
 .login-card .login-title { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px; }
 .login-card .login-title .brand-q { color: var(--accent); }
-.login-card .login-tagline { text-align: center; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.login-card .login-tagline2 { text-align: center; font-size: 11px; font-weight: 500; color: var(--text-tertiary); opacity: 0.75; margin-top: 1px; }
+.login-card .login-tagline { text-align: center; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.login-card .login-tagline2 { text-align: center; font-size: 11px; font-weight: 400; color: var(--text-tertiary); opacity: 0.75; margin-top: 1px; }
 .login-card .subtitle { text-align: center; color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
 .login-error {
   background: var(--critical-bg);
