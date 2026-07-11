@@ -455,8 +455,8 @@ function ReservaRecebimento({ user, itens }) {
           <table className="data-table sticky-head">
             <thead>
               <tr>
-                <th>Data Reserva</th><th>Responsável</th><th>Código</th><th>Descrição</th><th>Quant.</th><th>Un.</th>
-                <th>C/C</th><th>Reserva</th><th>Data da Entrega</th><th>Laudo</th><th>Qtd. Recebida</th><th>Pendência</th><th>Resp. Recebimento</th><th></th>
+                <th>Data Reserva</th><th>Reserva</th><th>Responsável</th><th>Código</th><th>Descrição</th><th>Quant.</th><th>Un.</th>
+                <th>C/C</th><th>Data da Entrega</th><th>Laudo</th><th>Qtd. Recebida</th><th>Pendência</th><th>Resp. Recebimento</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -465,13 +465,13 @@ function ReservaRecebimento({ user, itens }) {
                 return (
                 <tr key={m.id}>
                   <td>{fmtDate(m.data_movimento)}</td>
+                  <td>{m.numero_reserva || "—"}</td>
                   <td>{solicitante}</td>
                   <td>{m.codigo}</td>
                   <td>{(itens[m.codigo] || {}).descricao || "—"}</td>
                   <td>{fmtNum(m.quantidade)}</td>
                   <td>{m.unidade || (itens[m.codigo] || {}).unidade || "—"}</td>
                   <td>{m.centro_custo || "—"}</td>
-                  <td>{m.numero_reserva || "—"}</td>
                   <td>{m.data_entrega ? fmtDate(m.data_entrega) : "—"}</td>
                   <td>
                     {m.laudo === "Aprovado" ? <span className="badge badge-ok">Aprovado</span>
@@ -1354,12 +1354,7 @@ function Configuracoes({ user, onItensChange }) {
     <div>
       <div className="page-header">
         <h1>Configurações</h1>
-        <p>Gerencie produtos, usuários e sua própria conta.</p>
-      </div>
-
-      <div className="card section" style={{ marginBottom: 20 }}>
-        <h2 style={{ marginBottom: 14 }}>Minha conta</h2>
-        <TrocarMinhaSenha user={user} />
+        <p>Gerencie produtos e usuários.</p>
       </div>
 
       {user.perfil === "admin" ? (
@@ -1492,7 +1487,7 @@ function ProdutoModal({ produto, onClose, onSaved }) {
       res = await sb.rpc("criar_item", { p_codigo: codigo.trim(), p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0 });
     }
     setSalvando(false);
-    if (res.error) { setErro("Não foi possível salvar."); return; }
+    if (res.error) { setErro("Não foi possível salvar: " + (res.error.message || res.error.hint || "erro desconhecido")); return; }
     if (res.data === false) { setErro("Já existe um produto com esse código."); return; }
     onSaved();
   }
@@ -1634,7 +1629,7 @@ function EditarUsuarioModal({ usuario, onClose, onSaved }) {
     setSalvando(true);
     const { error } = await sb.rpc("editar_usuario", { p_pn: usuario.pn, p_nome: nome.trim(), p_perfil: perfil });
     setSalvando(false);
-    if (error) { setErro("Não foi possível salvar."); return; }
+    if (error) { setErro("Não foi possível salvar: " + (error.message || error.hint || "erro desconhecido")); return; }
     onSaved();
   }
 
