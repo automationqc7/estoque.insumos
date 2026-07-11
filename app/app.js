@@ -179,7 +179,7 @@ function ForcePasswordChange({ user, onDone }) {
 // ============================================================================
 // NAVEGAÇÃO
 // ============================================================================
-const APP_NAME = "StoQ-room";
+const APP_NAME = "StoQ•room";
 
 // Ícone da aplicação: caixa de papelão 3D (preenchida, para fundo claro).
 function CubeIcon({ size = 22 }) {
