@@ -73,8 +73,19 @@ button, input, select {
   align-items: center;
   gap: 10px;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 15px;
   letter-spacing: -0.01em;
+}
+.topbar-brand .brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.topbar-brand .brand-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0;
 }
 
 .topbar-brand .brand-icon {
@@ -91,38 +102,39 @@ button, input, select {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--text-secondary);
 }
 
 .topbar-user .user-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
+  gap: 6px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: rgba(255,255,255,0.6);
   color: var(--text);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 500;
 }
-.topbar-user .user-pill svg { color: var(--accent); }
+.topbar-user .user-pill svg { color: var(--accent); width: 13px; height: 13px; }
 
 .topbar-user button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   border: none;
   background: transparent;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  padding: 7px 12px;
+  padding: 6px 11px;
   border-radius: 999px;
   transition: background .15s ease;
 }
+.topbar-user button svg { width: 13px; height: 13px; }
 .topbar-user button:hover { background: var(--accent-tint-12); }
 
 .content {
@@ -154,18 +166,18 @@ button, input, select {
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 500;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 7px;
-  padding: 7px 13px;
+  gap: 6px;
+  padding: 6px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color .15s ease, background .15s ease;
 }
-.topnav button .icon { font-size: 14px; line-height: 1; }
+.topnav button .icon { font-size: 13px; line-height: 1; }
 .topnav button.active { color: var(--accent); background: var(--accent-tint-10); font-weight: 600; }
 .topnav button:hover:not(.active) { background: rgba(0,0,0,0.04); }
 
@@ -178,17 +190,17 @@ button, input, select {
 /* ---------------------------------------------------------------- generic */
 
 h1, h2, h3 { letter-spacing: -0.02em; margin: 0; }
-h1 { font-size: 25px; font-weight: 700; }
-h2 { font-size: 17px; font-weight: 700; }
-h3 { font-size: 14px; font-weight: 600; }
+h1 { font-size: 21px; font-weight: 700; }
+h2 { font-size: 15px; font-weight: 700; }
+h3 { font-size: 13.5px; font-weight: 600; }
 
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 .page-header p {
-  margin: 6px 0 0;
+  margin: 5px 0 0;
   color: var(--text-secondary);
-  font-size: 13.5px;
+  font-size: 12.5px;
 }
 
 .card {
