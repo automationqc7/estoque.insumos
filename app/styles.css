@@ -38,6 +38,9 @@ html, body {
   -webkit-font-smoothing: antialiased;
   height: 100%;
   font-size: 13.5px;
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 #root { min-height: 100vh; display: flex; flex-direction: column; }
@@ -427,7 +430,7 @@ h3 { font-size: 13px; font-weight: 600; }
 }
 .table-scroll.tall { max-height: 620px; }
 
-table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 table.data-table th {
   text-align: left;
   font-size: 10px;
