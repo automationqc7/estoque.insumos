@@ -263,8 +263,11 @@ function TopNav({ active, onChange }) {
 function Dashboard({ user, onNavigate }) {
   const [estoque, setEstoque] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [budgetData, setBudgetData] = useState([]);
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
+  const budgetChartRef = useRef(null);
+  const budgetChartInstance = useRef(null);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -273,6 +276,42 @@ function Dashboard({ user, onNavigate }) {
       .select("*")
       .order("estoque_atual", { ascending: true });
     if (!error && data) setEstoque(data);
+
+    // --- Budget vs realizado (mês corrente) por centro de custo ---
+    const agora = new Date();
+    const ini = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString().slice(0, 10);
+    const fim = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+    const [{ data: ccs }, { data: reservas }, { data: precos }] = await Promise.all([
+      sb.from("centros_custo").select("numero, descricao, budget"),
+      sb.from("movimentos_estoque")
+        .select("codigo, quantidade, centro_custo, data_movimento")
+        .eq("tipo", "reserva")
+        .gte("data_movimento", ini)
+        .lte("data_movimento", fim + "T23:59:59"),
+      sb.from("itens").select("codigo, preco"),
+    ]);
+
+    const precoMap = {};
+    (precos || []).forEach((p) => { precoMap[p.codigo] = Number(p.preco || 0); });
+
+    const realizado = {};
+    (reservas || []).forEach((r) => {
+      const cc = r.centro_custo || "—";
+      realizado[cc] = (realizado[cc] || 0) + Number(r.quantidade || 0) * (precoMap[r.codigo] || 0);
+    });
+
+    const linhas = (ccs || [])
+      .filter((c) => Number(c.budget || 0) > 0 || realizado[c.numero])
+      .map((c) => ({
+        numero: c.numero,
+        descricao: c.descricao || c.numero,
+        budget: Number(c.budget || 0),
+        gasto: realizado[c.numero] || 0,
+      }))
+      .sort((a, b) => b.gasto - a.gasto);
+    setBudgetData(linhas);
+
     setLoading(false);
   }, []);
 
@@ -352,6 +391,78 @@ function Dashboard({ user, onNavigate }) {
     });
   }, [loading, estoque, criticos]);
 
+  // Gráfico Budget vs Realizado (mês corrente) por centro de custo
+  useEffect(() => {
+    if (loading || !budgetChartRef.current || budgetData.length === 0) return;
+
+    const labels = budgetData.map((b) => (b.descricao || b.numero));
+    const gastos = budgetData.map((b) => Math.round(b.gasto * 100) / 100);
+    const metas = budgetData.map((b) => Math.round(b.budget * 100) / 100);
+    // barra fica vermelha (pastel) quando o gasto ultrapassa a meta (meta > 0)
+    const cores = budgetData.map((b) =>
+      (b.budget > 0 && b.gasto > b.budget) ? "rgba(240, 128, 100, 0.75)" : "rgba(130, 180, 140, 0.8)"
+    );
+
+    if (budgetChartInstance.current) budgetChartInstance.current.destroy();
+    budgetChartInstance.current = new Chart(budgetChartRef.current.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Gasto no mês",
+            data: gastos,
+            backgroundColor: cores,
+            borderColor: "#0071e3",
+            borderWidth: 1,
+            borderRadius: 3,
+            maxBarThickness: 60,
+            order: 2,
+          },
+          {
+            // Meta como marcador de linha vermelha sobre cada barra
+            label: "Meta (budget)",
+            type: "line",
+            data: metas,
+            showLine: false,
+            pointStyle: "line",
+            pointRadius: 22,
+            pointBorderColor: "#b00020",
+            pointBackgroundColor: "#b00020",
+            pointBorderWidth: 2.5,
+            rotation: 90,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${fmtBRL(ctx.parsed.y)}`,
+              afterBody: (items) => {
+                const idx = items[0].dataIndex;
+                const b = budgetData[idx];
+                if (b.budget > 0) {
+                  const pct = Math.round((b.gasto / b.budget) * 100);
+                  return `Utilizado: ${pct}% da meta`;
+                }
+                return "";
+              },
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
+          y: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" }, callback: (v) => fmtBRL(v) }, beginAtZero: true },
+        },
+      },
+    });
+  }, [loading, budgetData]);
+
   return (
     <div>
       <div className="page-header">
@@ -399,6 +510,18 @@ function Dashboard({ user, onNavigate }) {
         <div className="card stat-card">
           <div className="label">Total consumido</div>
           <div className="value">{fmtNum(totalConsumido)}</div>
+        </div>
+      </div>
+
+      <div className="card section">
+        <div className="flex-between" style={{ marginBottom: 16 }}>
+          <h2>Custo de reserva no mês × meta (por centro de custo)</h2>
+          <span className="small muted">Mês corrente</span>
+        </div>
+        <div className="chart-wrap">
+          {loading ? <div className="empty-state">Carregando…</div>
+            : budgetData.length === 0 ? <div className="empty-state">Nenhum centro de custo com meta ou gasto no mês. Cadastre a meta (budget) em Configurações → Centros de Custo.</div>
+            : <canvas ref={budgetChartRef}></canvas>}
         </div>
       </div>
 
@@ -1029,7 +1152,7 @@ function Estoque() {
         <div className="table-scroll tall">
           <table className="data-table sticky-head">
             <thead>
-              <tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Recebido</th><th>Consumido</th><th>Estoque</th><th>Mínimo</th><th title="Média de saídas por mês nos últimos 12 meses">Consumo médio/mês</th><th title="Média de dias entre a reserva e o recebimento">Entrega média (dias)</th><th>Status</th></tr>
+              <tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Recebido</th><th>Consumido</th><th>Estoque</th><th>Mínimo</th><th>R$ total</th><th title="Média de saídas por mês nos últimos 12 meses">Consumo médio/mês</th><th title="Média de dias entre a reserva e o recebimento">Entrega média (dias)</th><th>Status</th></tr>
             </thead>
             <tbody>
               {filtrado.map((i) => (
@@ -1041,6 +1164,7 @@ function Estoque() {
                   <td>{fmtNum(i.total_consumido)}</td>
                   <td><strong>{fmtNum(i.estoque_atual)}</strong></td>
                   <td>{fmtNum(i.estoque_minimo)}</td>
+                  <td>{fmtBRL(i.valor_estoque)}</td>
                   <td>{i.consumo_medio_mensal != null ? fmtNum(i.consumo_medio_mensal) : "—"}</td>
                   <td>{i.tempo_medio_entrega_dias != null ? `${fmtNum(i.tempo_medio_entrega_dias)} d` : "—"}</td>
                   <td>
@@ -1051,7 +1175,7 @@ function Estoque() {
                 </tr>
               ))}
               {!loading && filtrado.length === 0 && (
-                <tr><td colSpan="10"><div className="empty-state">Nenhum item encontrado.</div></td></tr>
+                <tr><td colSpan="11"><div className="empty-state">Nenhum item encontrado.</div></td></tr>
               )}
             </tbody>
           </table>
@@ -1340,14 +1464,6 @@ function DashboardAnalytics({ itens }) {
             <label>Código ou descrição do item</label>
             <ItemSearchSelect itens={itens} value={fCodigo} onChange={setFCodigo} allowClear />
           </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Data inicial</label>
-            <input type="date" value={fDataIni} onChange={(e) => setFDataIni(e.target.value)} />
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Data final</label>
-            <input type="date" value={fDataFim} onChange={(e) => setFDataFim(e.target.value)} />
-          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button
               className="btn btn-secondary"
@@ -1356,6 +1472,16 @@ function DashboardAnalytics({ itens }) {
             >
               Limpar filtros
             </button>
+          </div>
+        </div>
+        <div className="filtros-datas">
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Data inicial</label>
+            <input type="date" value={fDataIni} onChange={(e) => setFDataIni(e.target.value)} />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Data final</label>
+            <input type="date" value={fDataFim} onChange={(e) => setFDataFim(e.target.value)} />
           </div>
         </div>
       </div>
@@ -1812,7 +1938,7 @@ function CentroCustoConfig() {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const { data } = await sb.from("centros_custo").select("numero, descricao").order("numero");
+    const { data } = await sb.from("centros_custo").select("numero, descricao, budget").order("numero");
     setLista(data || []);
     setLoading(false);
   }, []);
@@ -1827,12 +1953,13 @@ function CentroCustoConfig() {
       </div>
       <div className="table-scroll">
         <table className="data-table sticky-head">
-          <thead><tr><th>Centro de Custo</th><th>Descrição</th><th></th></tr></thead>
+          <thead><tr><th>Centro de Custo</th><th>Descrição</th><th>Budget do mês</th><th></th></tr></thead>
           <tbody>
             {lista.map((c) => (
               <tr key={c.numero}>
                 <td>{c.numero}</td>
                 <td>{c.descricao || "—"}</td>
+                <td>{fmtBRL(c.budget)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <div className="icon-actions">
                     <IconButton kind="edit" title="Editar" onClick={() => setEditando(c)} />
@@ -1842,7 +1969,7 @@ function CentroCustoConfig() {
               </tr>
             ))}
             {!loading && lista.length === 0 && (
-              <tr><td colSpan="3"><div className="empty-state">Nenhum centro de custo cadastrado.</div></td></tr>
+              <tr><td colSpan="4"><div className="empty-state">Nenhum centro de custo cadastrado.</div></td></tr>
             )}
           </tbody>
         </table>
@@ -1870,6 +1997,7 @@ function CentroCustoModal({ centro, onClose, onSaved }) {
   const editMode = !!centro;
   const [numero, setNumero] = useState(centro ? centro.numero : "");
   const [descricao, setDescricao] = useState(centro ? centro.descricao || "" : "");
+  const [budget, setBudget] = useState(centro ? centro.budget : "");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -1879,9 +2007,9 @@ function CentroCustoModal({ centro, onClose, onSaved }) {
     setSalvando(true);
     let res;
     if (editMode) {
-      res = await sb.rpc("editar_centro_custo", { p_numero: numero.trim(), p_descricao: descricao });
+      res = await sb.rpc("editar_centro_custo", { p_numero: numero.trim(), p_descricao: descricao, p_budget: Number(budget) || 0 });
     } else {
-      res = await sb.rpc("criar_centro_custo", { p_numero: numero.trim(), p_descricao: descricao });
+      res = await sb.rpc("criar_centro_custo", { p_numero: numero.trim(), p_descricao: descricao, p_budget: Number(budget) || 0 });
     }
     setSalvando(false);
     if (res.error) { setErro("Não foi possível salvar."); return; }
@@ -1902,6 +2030,10 @@ function CentroCustoModal({ centro, onClose, onSaved }) {
           <div className="field">
             <label>Descrição</label>
             <input type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Budget do mês (R$)</label>
+            <input type="number" min="0" step="any" value={budget} onChange={(e) => setBudget(e.target.value)} />
           </div>
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
