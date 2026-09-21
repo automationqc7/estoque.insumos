@@ -413,7 +413,7 @@ function Dashboard({ user, onNavigate }) {
             label: "Gasto no mês",
             data: gastos,
             backgroundColor: cores,
-            borderColor: "#0071e3",
+            borderColor: "#9aa0a6",
             borderWidth: 1,
             borderRadius: 3,
             maxBarThickness: 60,
@@ -438,7 +438,22 @@ function Dashboard({ user, onNavigate }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 11 } } },
+          legend: {
+            position: "top",
+            labels: {
+              usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 11 },
+              generateLabels: (chart) => {
+                const items = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                items.forEach((it) => {
+                  if (it.text === "Gasto no mês") {
+                    it.fillStyle = "rgba(130, 180, 140, 0.9)";
+                    it.strokeStyle = "rgba(130, 180, 140, 0.9)";
+                  }
+                });
+                return items;
+              },
+            },
+          },
           tooltip: {
             callbacks: {
               label: (ctx) => `${ctx.dataset.label}: ${fmtBRL(ctx.parsed.y)}`,
