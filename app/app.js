@@ -35,6 +35,9 @@ function fmtNum(n) {
   if (n === null || n === undefined) return "0";
   return Number(n).toLocaleString("pt-BR");
 }
+function fmtBRL(n) {
+  return Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 function fmtDate(d) {
   if (!d) return "—";
   try {
@@ -195,10 +198,10 @@ function CubeIcon({ size = 22 }) {
 
 const NAV_ITEMS = [
   { key: "inicio", label: "Início", icon: "🏠" },
-  { key: "dashboard", label: "Dashboard", icon: "📈" },
   { key: "reserva", label: "Reserva", icon: "🧾" },
   { key: "saida", label: "Saída", icon: "📤" },
   { key: "estoque", label: "Estoque", icon: "📊" },
+  { key: "dashboard", label: "Dashboard", icon: "📈" },
   { key: "config", label: "Config.", icon: "⚙️" },
 ];
 
@@ -287,6 +290,10 @@ function Dashboard({ user, onNavigate }) {
   );
   const totalEmEstoque = useMemo(
     () => estoque.reduce((acc, i) => acc + Number(i.estoque_atual || 0), 0),
+    [estoque]
+  );
+  const valorEstoque = useMemo(
+    () => estoque.reduce((acc, i) => acc + Number(i.valor_estoque || 0), 0),
     [estoque]
   );
 
@@ -380,6 +387,10 @@ function Dashboard({ user, onNavigate }) {
         <div className="card stat-card">
           <div className="label">Total em estoque</div>
           <div className="value">{fmtNum(totalEmEstoque)}</div>
+        </div>
+        <div className="card stat-card">
+          <div className="label">Valor do estoque</div>
+          <div className="value">{fmtBRL(valorEstoque)}</div>
         </div>
         <div className="card stat-card">
           <div className="label">Total recebido</div>
@@ -1088,29 +1099,85 @@ function labelMes(ym) {
   return `${meses[Number(m) - 1]}/${y.slice(2)}`;
 }
 
+// Multi-seleção de centros de custo (lista "número – descrição")
+function MultiSelectCC({ opcoes, selecionados, onChange }) {
+  const [aberto, setAberto] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function onDoc(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setAberto(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  function toggle(num) {
+    if (selecionados.includes(num)) onChange(selecionados.filter((x) => x !== num));
+    else onChange([...selecionados, num]);
+  }
+
+  const rotulo = selecionados.length === 0
+    ? "Todos"
+    : `${selecionados.length} selecionado(s)`;
+
+  return (
+    <div className="combo" ref={wrapRef}>
+      <div
+        className="multiselect-trigger"
+        onClick={() => setAberto((v) => !v)}
+      >
+        {rotulo}
+        <span style={{ opacity: 0.5 }}>▾</span>
+      </div>
+      {aberto && (
+        <ul className="combo-list">
+          {selecionados.length > 0 && (
+            <li className="combo-clear" onMouseDown={() => onChange([])}>Limpar seleção</li>
+          )}
+          {opcoes.length === 0 && <li className="combo-empty">Nenhum centro cadastrado</li>}
+          {opcoes.map((c) => (
+            <li key={c.numero} onMouseDown={(e) => { e.preventDefault(); toggle(c.numero); }} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" readOnly checked={selecionados.includes(c.numero)} style={{ width: "auto", margin: 0 }} />
+              <span>{c.numero}{c.descricao ? ` – ${c.descricao}` : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function DashboardAnalytics({ itens }) {
   const [movs, setMovs] = useState([]);
   const [estoque, setEstoque] = useState([]);
+  const [centrosCusto, setCentrosCusto] = useState([]);
+  const [precos, setPrecos] = useState({});
   const [loading, setLoading] = useState(true);
 
   // filtros
   const [fLocal, setFLocal] = useState("");
   const [fCodigo, setFCodigo] = useState("");
+  const [fCentros, setFCentros] = useState([]);  // multi-seleção
   const [fDataIni, setFDataIni] = useState("");
   const [fDataFim, setFDataFim] = useState("");
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    // busca reservas e saídas (recebimento não é usado nestes gráficos)
+    // reservas e saídas, agora com centro_custo
     const { data } = await sb
       .from("movimentos_estoque")
-      .select("tipo, codigo, quantidade, data_movimento, local_destino")
+      .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo")
       .in("tipo", ["reserva", "saida"])
       .order("data_movimento", { ascending: true })
       .limit(20000);
     setMovs(data || []);
-    const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual").order("estoque_atual", { ascending: false });
+    const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual, preco").order("estoque_atual", { ascending: false });
     setEstoque(est || []);
+    // mapa de preço por código (para valores)
+    const pmap = {};
+    (est || []).forEach((e) => { pmap[e.codigo] = Number(e.preco || 0); });
+    setPrecos(pmap);
+    const { data: cc } = await sb.from("centros_custo").select("numero, descricao").order("numero");
+    setCentrosCusto(cc || []);
     setLoading(false);
   }, []);
 
@@ -1121,13 +1188,21 @@ function DashboardAnalytics({ itens }) {
     return movs.filter((m) => {
       if (fLocal && m.local_destino !== fLocal) return false;
       if (fCodigo && `${m.codigo}` !== `${fCodigo}`) return false;
+      if (fCentros.length > 0 && !fCentros.includes(m.centro_custo)) return false;
       if (fDataIni && (!m.data_movimento || m.data_movimento.slice(0, 10) < fDataIni)) return false;
       if (fDataFim && (!m.data_movimento || m.data_movimento.slice(0, 10) > fDataFim)) return false;
       return true;
     });
-  }, [movs, fLocal, fCodigo, fDataIni, fDataFim]);
+  }, [movs, fLocal, fCodigo, fCentros, fDataIni, fDataFim]);
 
-  const temFiltro = fLocal || fCodigo || fDataIni || fDataFim;
+  const temFiltro = fLocal || fCodigo || fCentros.length > 0 || fDataIni || fDataFim;
+
+  // descrição do centro de custo por número
+  const ccDesc = useMemo(() => {
+    const m = {};
+    centrosCusto.forEach((c) => { m[c.numero] = c.descricao || c.numero; });
+    return m;
+  }, [centrosCusto]);
 
   // --- agregações ---
 
@@ -1190,6 +1265,39 @@ function DashboardAnalytics({ itens }) {
       .map((e) => ({ nome: (e.descricao || e.codigo).slice(0, 26), valor: Number(e.estoque_atual) }));
   }, [estoque, fCodigo]);
 
+  // 6) valor adquirido (reserva) por mês, por centro de custo — empilhado
+  //    valor = preço unitário atual × quantidade reservada
+  const valorCCporMes = useMemo(() => {
+    const reservas = filtrado.filter((m) => m.tipo === "reserva" && m.data_movimento);
+    const meses = Array.from(new Set(reservas.map((m) => m.data_movimento.slice(0, 7)))).sort();
+    const ccs = Array.from(new Set(reservas.map((m) => m.centro_custo || "—")));
+    const matriz = {};
+    ccs.forEach((c) => { matriz[c] = {}; });
+    reservas.forEach((m) => {
+      const ym = m.data_movimento.slice(0, 7);
+      const c = m.centro_custo || "—";
+      const valor = Number(m.quantidade || 0) * (precos[m.codigo] || 0);
+      matriz[c][ym] = (matriz[c][ym] || 0) + valor;
+    });
+    // rótulo do CC: "número – descrição"
+    const rotulos = ccs.map((c) => (c === "—" ? "Sem centro de custo" : `${c}${ccDesc[c] && ccDesc[c] !== c ? " – " + ccDesc[c] : ""}`));
+    return { meses, ccs, rotulos, matriz };
+  }, [filtrado, precos, ccDesc]);
+
+  // 7) itens adquiridos (reserva), do maior para o menor — por valor
+  const itensAdquiridos = useMemo(() => {
+    const map = {};
+    filtrado.filter((m) => m.tipo === "reserva").forEach((m) => {
+      const valor = Number(m.quantidade || 0) * (precos[m.codigo] || 0);
+      map[m.codigo] = (map[m.codigo] || 0) + valor;
+    });
+    return Object.keys(map)
+      .map((cod) => ({ codigo: cod, valor: map[cod], nome: (itens[cod] || {}).descricao || cod }))
+      .filter((x) => x.valor > 0)
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 12);
+  }, [filtrado, precos, itens]);
+
   const baseOptions = {
     plugins: { legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 11 } } } },
     scales: {
@@ -1214,11 +1322,19 @@ function DashboardAnalytics({ itens }) {
       <div className="card section filtros-card" style={{ marginBottom: 20 }}>
         <div className="filtros-grid">
           <div className="field" style={{ marginBottom: 0 }}>
-            <label>Local (destino)</label>
+            <label>Local de destino (consumo)</label>
             <select value={fLocal} onChange={(e) => setFLocal(e.target.value)}>
               <option value="">Todos</option>
               {LOCAIS_DESTINO.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Centro de custo</label>
+            <MultiSelectCC
+              opcoes={centrosCusto}
+              selecionados={fCentros}
+              onChange={setFCentros}
+            />
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Código ou descrição do item</label>
@@ -1236,7 +1352,7 @@ function DashboardAnalytics({ itens }) {
             <button
               className="btn btn-secondary"
               disabled={!temFiltro}
-              onClick={() => { setFLocal(""); setFCodigo(""); setFDataIni(""); setFDataFim(""); }}
+              onClick={() => { setFLocal(""); setFCodigo(""); setFCentros([]); setFDataIni(""); setFDataFim(""); }}
             >
               Limpar filtros
             </button>
@@ -1323,6 +1439,62 @@ function DashboardAnalytics({ itens }) {
               />
             )}
           </div>
+
+          <div className="card section">
+            <h2 style={{ marginBottom: 16 }}>Valor adquirido por centro de custo (por mês)</h2>
+            {valorCCporMes.meses.length === 0 ? <div className="empty-state">Sem dados para os filtros.</div> : (
+              <ChartBox
+                type="bar"
+                data={{
+                  labels: valorCCporMes.meses.map(labelMes),
+                  datasets: valorCCporMes.ccs.map((c, idx) => ({
+                    label: valorCCporMes.rotulos[idx],
+                    data: valorCCporMes.meses.map((ym) => Math.round((valorCCporMes.matriz[c][ym] || 0) * 100) / 100),
+                    backgroundColor: CHART_COLORS.palette[idx % CHART_COLORS.palette.length],
+                    borderRadius: 4,
+                    maxBarThickness: 40,
+                  })),
+                }}
+                options={{
+                  ...baseOptions,
+                  plugins: {
+                    legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 10 } } },
+                    tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtBRL(ctx.parsed.y)}` } },
+                  },
+                  scales: {
+                    x: { ...baseOptions.scales.x, stacked: true },
+                    y: { ...baseOptions.scales.y, stacked: true, ticks: { font: { family: "Inter" }, callback: (v) => fmtBRL(v) } },
+                  },
+                }}
+              />
+            )}
+          </div>
+
+          <div className="card section">
+            <h2 style={{ marginBottom: 16 }}>Itens adquiridos (valor)</h2>
+            {itensAdquiridos.length === 0 ? <div className="empty-state">Sem dados para os filtros.</div> : (
+              <ChartBox
+                type="bar"
+                height={Math.max(300, itensAdquiridos.length * 32)}
+                data={{
+                  labels: itensAdquiridos.map((i) => (i.nome || i.codigo).slice(0, 28)),
+                  datasets: [{ label: "Valor adquirido", data: itensAdquiridos.map((i) => Math.round(i.valor * 100) / 100), backgroundColor: CHART_COLORS.accent, borderRadius: 6, maxBarThickness: 22 }],
+                }}
+                options={{
+                  indexAxis: "y",
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: (ctx) => fmtBRL(ctx.parsed.x) } },
+                  },
+                  scales: {
+                    x: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" }, callback: (v) => fmtBRL(v) }, beginAtZero: true },
+                    y: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
+                  },
+                }}
+              />
+            )}
+          </div>
+
           <div className="card section" style={{ gridColumn: "1 / -1" }}>
             <h2 style={{ marginBottom: 16 }}>Itens disponíveis em estoque, por produto</h2>
             {estoquePorProduto.length === 0 ? <div className="empty-state">Sem itens com saldo em estoque.</div> : (
@@ -1364,6 +1536,7 @@ function Configuracoes({ user, onItensChange }) {
       {user.perfil === "admin" ? (
         <>
           <ProdutosConfig onItensChange={onItensChange} />
+          <CentroCustoConfig />
           <UsuariosConfig user={user} />
         </>
       ) : (
@@ -1383,11 +1556,12 @@ function ProdutosConfig({ onItensChange }) {
   const [showNovo, setShowNovo] = useState(false);
   const [editando, setEditando] = useState(null);
   const [excluindo, setExcluindo] = useState(null);
+  const [showAtualizar, setShowAtualizar] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
     const { data } = await sb.from("itens")
-      .select("codigo, descricao, unidade, estoque_minimo")
+      .select("codigo, descricao, unidade, estoque_minimo, preco")
       .eq("ativo", true)
       .order("descricao");
     setProdutos(data || []);
@@ -1411,7 +1585,10 @@ function ProdutosConfig({ onItensChange }) {
     <div className="card section" style={{ marginBottom: 20 }}>
       <div className="flex-between" style={{ marginBottom: 16 }}>
         <h2>Produtos</h2>
-        <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Novo produto</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => setShowAtualizar(true)}>↻ Atualizar valores</button>
+          <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Novo produto</button>
+        </div>
       </div>
 
       <input
@@ -1426,13 +1603,14 @@ function ProdutosConfig({ onItensChange }) {
       <div className="table-scroll">
         <table className="data-table sticky-head">
           <thead>
-            <tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Estoque mínimo</th><th></th></tr>
+            <tr><th>Código</th><th>Descrição</th><th>Valor</th><th>Un.</th><th>Estoque mínimo</th><th></th></tr>
           </thead>
           <tbody>
             {filtrado.map((p) => (
               <tr key={p.codigo}>
                 <td>{p.codigo}</td>
                 <td>{p.descricao || "—"}</td>
+                <td>{fmtBRL(p.preco)}</td>
                 <td>{p.unidade}</td>
                 <td>{fmtNum(p.estoque_minimo)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
@@ -1444,7 +1622,7 @@ function ProdutosConfig({ onItensChange }) {
               </tr>
             ))}
             {!loading && filtrado.length === 0 && (
-              <tr><td colSpan="5"><div className="empty-state">Nenhum produto encontrado.</div></td></tr>
+              <tr><td colSpan="6"><div className="empty-state">Nenhum produto encontrado.</div></td></tr>
             )}
           </tbody>
         </table>
@@ -1452,6 +1630,7 @@ function ProdutosConfig({ onItensChange }) {
 
       {showNovo && <ProdutoModal onClose={() => setShowNovo(false)} onSaved={() => { setShowNovo(false); afterChange(); }} />}
       {editando && <ProdutoModal produto={editando} onClose={() => setEditando(null)} onSaved={() => { setEditando(null); afterChange(); }} />}
+      {showAtualizar && <AtualizarValoresModal onClose={() => setShowAtualizar(false)} onDone={() => { setShowAtualizar(false); afterChange(); }} />}
       {excluindo && (
         <ConfirmModal
           titulo="Excluir produto"
@@ -1468,6 +1647,92 @@ function ProdutosConfig({ onItensChange }) {
   );
 }
 
+// Modal de atualização mensal de valores via planilha (colunas "Material" e "Preço")
+function AtualizarValoresModal({ onClose, onDone }) {
+  const [processando, setProcessando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState("");
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setErro(""); setResultado(null); setProcessando(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+      if (rows.length === 0) throw new Error("Planilha vazia.");
+
+      // Localiza colunas "Material" e "Preço" (tolerante a acento/caixa)
+      const headers = Object.keys(rows[0]);
+      const colMat = headers.find((h) => h.trim().toLowerCase() === "material");
+      const colPreco = headers.find((h) => {
+        const k = h.trim().toLowerCase();
+        return k === "preço" || k === "preco";
+      });
+      if (!colMat || !colPreco) {
+        throw new Error('A planilha precisa ter as colunas "Material" e "Preço".');
+      }
+
+      // Monta mapa código -> preço (último valor vence)
+      const mapa = {};
+      rows.forEach((r) => {
+        const cod = r[colMat] != null ? String(r[colMat]).trim() : "";
+        const preco = r[colPreco];
+        if (!cod || preco == null || preco === "") return;
+        const p = Number(String(preco).replace(",", "."));
+        if (!isNaN(p)) mapa[cod] = p;
+      });
+
+      // Chama a função que atualiza só quando o valor difere
+      let atualizados = 0, semMudanca = 0, naoEncontrados = 0;
+      const entries = Object.entries(mapa);
+      for (const [cod, preco] of entries) {
+        const { data, error } = await sb.rpc("atualizar_preco_item", { p_codigo: cod, p_preco: preco });
+        if (error) { naoEncontrados++; continue; }
+        if (data === true) atualizados++;
+        else semMudanca++;  // igual OU código inexistente
+      }
+      setResultado({ total: entries.length, atualizados, semMudanca });
+    } catch (err) {
+      setErro(err.message || "Não foi possível processar a planilha.");
+    } finally {
+      setProcessando(false);
+      e.target.value = "";
+    }
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Atualizar valores</h2>
+        <p className="subtitle" style={{ marginTop: 8 }}>
+          Anexe uma planilha (.xlsx) com as colunas <strong>Material</strong> e <strong>Preço</strong>.
+          Só serão atualizados os produtos cujo preço estiver diferente do cadastrado. O histórico não é alterado.
+        </p>
+        {erro && <div className="login-error">{erro}</div>}
+        {resultado && (
+          <div className="login-error" style={{ background: "var(--ok-bg)", color: "#248a3d" }}>
+            {resultado.atualizados} atualizado(s), {resultado.semMudanca} sem alteração — de {resultado.total} linha(s) lida(s).
+          </div>
+        )}
+        {!resultado && (
+          <label className="btn btn-primary btn-full" style={{ textAlign: "center", cursor: "pointer", display: "block", marginTop: 8 }}>
+            {processando ? "Processando…" : "Escolher planilha"}
+            <input type="file" accept=".xlsx,.xls" onChange={handleFile} disabled={processando} style={{ display: "none" }} />
+          </label>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary btn-full" onClick={resultado ? onDone : onClose}>
+            {resultado ? "Concluir" : "Cancelar"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function ProdutoModal({ produto, onClose, onSaved }) {
   const editMode = !!produto;
   const [codigo, setCodigo] = useState(produto ? produto.codigo : "");
@@ -1477,6 +1742,7 @@ function ProdutoModal({ produto, onClose, onSaved }) {
     return UNIDADES.includes(u) ? u : "un";
   });
   const [minimo, setMinimo] = useState(produto ? produto.estoque_minimo : "");
+  const [preco, setPreco] = useState(produto ? produto.preco : "");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -1486,9 +1752,9 @@ function ProdutoModal({ produto, onClose, onSaved }) {
     setSalvando(true);
     let res;
     if (editMode) {
-      res = await sb.rpc("editar_item", { p_codigo: codigo, p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0 });
+      res = await sb.rpc("editar_item_preco", { p_codigo: codigo, p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0, p_preco: Number(preco) || 0 });
     } else {
-      res = await sb.rpc("criar_item", { p_codigo: codigo.trim(), p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0 });
+      res = await sb.rpc("criar_item_preco", { p_codigo: codigo.trim(), p_descricao: descricao, p_unidade: unidade, p_estoque_minimo: Number(minimo) || 0, p_preco: Number(preco) || 0 });
     }
     setSalvando(false);
     if (res.error) { setErro("Não foi possível salvar: " + (res.error.message || res.error.hint || "erro desconhecido")); return; }
@@ -1512,15 +1778,130 @@ function ProdutoModal({ produto, onClose, onSaved }) {
           </div>
           <div className="form-row">
             <div className="field">
+              <label>Valor (R$)</label>
+              <input type="number" min="0" step="any" value={preco} onChange={(e) => setPreco(e.target.value)} />
+            </div>
+            <div className="field">
               <label>Unidade</label>
               <select value={unidade} onChange={(e) => setUnidade(e.target.value)}>
                 {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
-            <div className="field">
-              <label>Estoque mínimo</label>
-              <input type="number" min="0" step="any" value={minimo} onChange={(e) => setMinimo(e.target.value)} />
-            </div>
+          </div>
+          <div className="field">
+            <label>Estoque mínimo</label>
+            <input type="number" min="0" step="any" value={minimo} onChange={(e) => setMinimo(e.target.value)} />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+          </div>
+        </form>
+      </div>
+    </Modal>
+  );
+}
+
+// ---- CENTROS DE CUSTO ----
+function CentroCustoConfig() {
+  const [lista, setLista] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNovo, setShowNovo] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [excluindo, setExcluindo] = useState(null);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await sb.from("centros_custo").select("numero, descricao").order("numero");
+    setLista(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  return (
+    <div className="card section" style={{ marginBottom: 20 }}>
+      <div className="flex-between" style={{ marginBottom: 16 }}>
+        <h2>Centros de Custo</h2>
+        <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Novo centro de custo</button>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table sticky-head">
+          <thead><tr><th>Centro de Custo</th><th>Descrição</th><th></th></tr></thead>
+          <tbody>
+            {lista.map((c) => (
+              <tr key={c.numero}>
+                <td>{c.numero}</td>
+                <td>{c.descricao || "—"}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <div className="icon-actions">
+                    <IconButton kind="edit" title="Editar" onClick={() => setEditando(c)} />
+                    <IconButton kind="delete" title="Excluir" onClick={() => setExcluindo(c)} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!loading && lista.length === 0 && (
+              <tr><td colSpan="3"><div className="empty-state">Nenhum centro de custo cadastrado.</div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showNovo && <CentroCustoModal onClose={() => setShowNovo(false)} onSaved={() => { setShowNovo(false); carregar(); }} />}
+      {editando && <CentroCustoModal centro={editando} onClose={() => setEditando(null)} onSaved={() => { setEditando(null); carregar(); }} />}
+      {excluindo && (
+        <ConfirmModal
+          titulo="Excluir centro de custo"
+          mensagem={`Excluir o centro de custo "${excluindo.numero}"? Isso não afeta reservas já registradas.`}
+          onClose={() => setExcluindo(null)}
+          onConfirm={async () => {
+            await sb.rpc("excluir_centro_custo", { p_numero: excluindo.numero });
+            setExcluindo(null);
+            carregar();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CentroCustoModal({ centro, onClose, onSaved }) {
+  const editMode = !!centro;
+  const [numero, setNumero] = useState(centro ? centro.numero : "");
+  const [descricao, setDescricao] = useState(centro ? centro.descricao || "" : "");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!numero.trim()) { setErro("Informe o número do centro de custo."); return; }
+    setSalvando(true);
+    let res;
+    if (editMode) {
+      res = await sb.rpc("editar_centro_custo", { p_numero: numero.trim(), p_descricao: descricao });
+    } else {
+      res = await sb.rpc("criar_centro_custo", { p_numero: numero.trim(), p_descricao: descricao });
+    }
+    setSalvando(false);
+    if (res.error) { setErro("Não foi possível salvar."); return; }
+    if (res.data === false) { setErro("Já existe um centro de custo com esse número."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>{editMode ? "Editar centro de custo" : "Novo centro de custo"}</h2>
+        {erro && <div className="login-error">{erro}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Número do Centro de Custo</label>
+            <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} disabled={editMode} />
+          </div>
+          <div className="field">
+            <label>Descrição</label>
+            <input type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
           </div>
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
