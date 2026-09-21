@@ -436,11 +436,13 @@ h3 { font-size: 13px; font-weight: 600; }
 
 /* filtros do dashboard — fonte ligeiramente menor */
 .filtros-card { position: relative; z-index: 50; overflow: visible; }
-.filtros-grid .field label { font-size: 11px; }
+.filtros-grid .field label,
+.filtros-datas .field label { font-size: 11px; }
 .filtros-grid .combo-list li { font-size: 11.5px; }
 .filtros-grid .field input,
 .filtros-grid .field select,
-.filtros-grid .combo input {
+.filtros-grid .combo input,
+.filtros-datas .field input {
   font-size: 12.5px;
   padding: 8px 11px;
 }
