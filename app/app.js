@@ -420,7 +420,7 @@ function Dashboard({ user, onNavigate }) {
             order: 2,
           },
           {
-            // Meta como marcador de linha vermelha sobre cada barra
+            // Meta como marcador de linha vermelha horizontal sobre cada barra
             label: "Meta (budget)",
             type: "line",
             data: metas,
@@ -430,7 +430,6 @@ function Dashboard({ user, onNavigate }) {
             pointBorderColor: "#b00020",
             pointBackgroundColor: "#b00020",
             pointBorderWidth: 2.5,
-            rotation: 90,
             order: 1,
           },
         ],
