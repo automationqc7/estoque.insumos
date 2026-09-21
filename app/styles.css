@@ -260,6 +260,15 @@ h3 { font-size: 13px; font-weight: 600; }
 @media (max-width: 900px) {
   .filtros-grid { grid-template-columns: 1fr 1fr; }
 }
+.filtros-datas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 14px;
+  margin-top: 14px;
+}
+@media (max-width: 900px) {
+  .filtros-datas { grid-template-columns: 1fr 1fr; }
+}
 
 /* grade dos gráficos: 2 colunas em telas largas */
 .dash-grid {
