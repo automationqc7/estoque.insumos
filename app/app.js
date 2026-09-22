@@ -201,6 +201,7 @@ const NAV_ITEMS = [
   { key: "reserva", label: "Reserva", icon: "🧾" },
   { key: "saida", label: "Saída", icon: "📤" },
   { key: "estoque", label: "Estoque", icon: "📊" },
+  { key: "sapatas", label: "Sapatas US", icon: "🦶" },
   { key: "dashboard", label: "Dashboard", icon: "📈" },
   { key: "config", label: "Config.", icon: "⚙️" },
 ];
@@ -561,6 +562,7 @@ function ReservaRecebimento({ user, itens }) {
   const [showForm, setShowForm] = useState(false);
   const [recebendo, setRecebendo] = useState(null);
   const [busca, setBusca] = useState("");
+  const [filtroPend, setFiltroPend] = useState("todas");
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -576,11 +578,20 @@ function ReservaRecebimento({ user, itens }) {
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  // pendente = ainda não recebeu tudo que foi reservado
+  function isPendente(m) {
+    return !m.quantidade_recebida || Number(m.quantidade_recebida) < Number(m.quantidade);
+  }
+
   const filtrado = useMemo(() => {
-    if (!busca) return lista;
-    const q = busca.toLowerCase();
-    return lista.filter((m) => `${m.numero_reserva || ""}`.toLowerCase().includes(q));
-  }, [lista, busca]);
+    return lista.filter((m) => {
+      if (filtroPend === "pendentes" && !isPendente(m)) return false;
+      if (busca && !`${m.numero_reserva || ""}`.toLowerCase().includes(busca.toLowerCase())) return false;
+      return true;
+    });
+  }, [lista, busca, filtroPend]);
+
+  const qtdPendentes = useMemo(() => lista.filter(isPendente).length, [lista]);
 
   return (
     <div>
@@ -594,7 +605,10 @@ function ReservaRecebimento({ user, itens }) {
 
       <div className="card section">
         <div className="flex-between" style={{ marginBottom: 14 }}>
-          <h2>Últimas reservas</h2>
+          <div className="tag-row" style={{ marginBottom: 0 }}>
+            <button className={`tag-filter ${filtroPend === "todas" ? "active" : ""}`} onClick={() => setFiltroPend("todas")}>Todas ({lista.length})</button>
+            <button className={`tag-filter ${filtroPend === "pendentes" ? "active" : ""}`} onClick={() => setFiltroPend("pendentes")}>Pendentes ({qtdPendentes})</button>
+          </div>
           <input
             className="search-input"
             type="text"
@@ -751,7 +765,7 @@ function ItemSearchSelect({ itens, value, onChange, allowClear = false, placehol
   );
 }
 
-const LOCAIS_DESTINO = ["Laminação", "Tratamento Térmico", "Flex Line", "Fast Casing", "Fábrica de Luvas"];
+const LOCAIS_DESTINO = ["Laminação", "Tratamento Térmico", "Flex Line", "Fast Casing", "Fábrica de Luvas", "Terceiros"];
 
 const UNIDADES = ["pç", "lt", "un", "kg", "cj", "fr", "cx"];
 
@@ -1663,6 +1677,501 @@ function DashboardAnalytics({ itens }) {
 }
 
 // ============================================================================
+// SAPATAS US (produção + rendimento + análise de planejamento)
+// ============================================================================
+
+// Extrai o diâmetro da descrição do produto: primeiro trecho até o 1º espaço.
+// Ex: "244,40 x 13,84 - P29HBV..." -> 244.40
+function extrairDiametro(descricao) {
+  if (!descricao) return null;
+  const primeiro = String(descricao).trim().split(/\s+/)[0]; // "244,40"
+  const num = parseFloat(primeiro.replace(",", "."));
+  return isNaN(num) ? null : num;
+}
+
+// Extrai o número da sapata (diâmetro) e a letra (L/C) de "244L" -> {diam:244, letra:'L'}
+function parseSapata(sapata) {
+  const m = String(sapata).trim().toUpperCase().match(/^([\d.,]+)\s*([LC])$/);
+  if (!m) return null;
+  return { diam: parseFloat(m[1].replace(",", ".")), letra: m[2] };
+}
+
+function SapatasUS({ user, itens }) {
+  const [aba, setAba] = useState("producao"); // producao | rendimento | analise
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1>Sapatas US</h1>
+        <p>Produção de sapatas para ultrassom, rendimento e planejamento.</p>
+      </div>
+
+      <div className="tag-row">
+        <button className={`tag-filter ${aba === "producao" ? "active" : ""}`} onClick={() => setAba("producao")}>Produção</button>
+        <button className={`tag-filter ${aba === "rendimento" ? "active" : ""}`} onClick={() => setAba("rendimento")}>Consumo médio (rendimento)</button>
+        <button className={`tag-filter ${aba === "analise" ? "active" : ""}`} onClick={() => setAba("analise")}>Análise de planejamento</button>
+      </div>
+
+      {aba === "producao" && <SapatasProducao user={user} itens={itens} />}
+      {aba === "rendimento" && <SapatasRendimento />}
+      {aba === "analise" && <SapatasAnalise itens={itens} />}
+    </div>
+  );
+}
+
+// ---- PARTE 1: Produção ----
+function SapatasProducao({ user, itens }) {
+  const [lista, setLista] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [nomesPorPn, setNomesPorPn] = useState({});
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await sb.from("sapatas_producao").select("*").order("data_producao", { ascending: false }).limit(300);
+    setLista(data || []);
+    const pns = Array.from(new Set((data || []).map((m) => m.usuario_pn).filter(Boolean)));
+    if (pns.length) {
+      const { data: us } = await sb.from("usuarios").select("pn, nome").in("pn", pns);
+      const map = {}; (us || []).forEach((u) => { map[u.pn] = u.nome; });
+      setNomesPorPn(map);
+    }
+    setLoading(false);
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  return (
+    <div className="card section">
+      <div className="flex-between" style={{ marginBottom: 14 }}>
+        <h2>Sapatas para Ultrassom</h2>
+        <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Registrar produção</button>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table sticky-head">
+          <thead><tr><th>Data</th><th>Turno</th><th>Código</th><th>Descrição</th><th>Qtd. produzida</th><th>Registrado por</th></tr></thead>
+          <tbody>
+            {lista.map((m) => (
+              <tr key={m.id}>
+                <td>{fmtDate(m.data_producao)}</td>
+                <td>{m.turno || "—"}</td>
+                <td>{m.codigo}</td>
+                <td>{(itens[m.codigo] || {}).descricao || "—"}</td>
+                <td>{fmtNum(m.quantidade)}</td>
+                <td>{m.usuario_pn ? (nomesPorPn[m.usuario_pn] || m.usuario_pn) : "—"}</td>
+              </tr>
+            ))}
+            {!loading && lista.length === 0 && (
+              <tr><td colSpan="6"><div className="empty-state">Nenhuma produção registrada ainda.</div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {showForm && <SapatasProducaoModal user={user} itens={itens} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); carregar(); }} />}
+    </div>
+  );
+}
+
+function SapatasProducaoModal({ user, itens, onClose, onSaved }) {
+  const [codigo, setCodigo] = useState("");
+  const [quantidade, setQuantidade] = useState("");
+  const [data, setData] = useState(new Date().toISOString().slice(0, 10));
+  const [turno, setTurno] = useState("Turno 1");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const descricao = (itens[codigo.trim()] || {}).descricao || "";
+  const codigoValido = !!itens[codigo.trim()];
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!codigo.trim()) { setErro("Informe o código da sapata."); return; }
+    if (!codigoValido) { setErro("Código não encontrado no cadastro de produtos."); return; }
+    if (!quantidade) { setErro("Informe a quantidade produzida."); return; }
+    if (!data) { setErro("Informe a data."); return; }
+    setSalvando(true);
+    const { error } = await sb.from("sapatas_producao").insert({
+      codigo: codigo.trim(),
+      quantidade: Number(quantidade),
+      data_producao: data,
+      turno,
+      usuario_pn: user.pn,
+    });
+    setSalvando(false);
+    if (error) { setErro("Não foi possível salvar."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Registrar produção</h2>
+        <div className="subtitle">Registrado por {user.nome}</div>
+        {erro && <div className="login-error">{erro}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Código da sapata</label>
+            <input type="text" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Digite o código" autoFocus />
+          </div>
+          <div className="field">
+            <label>Descrição</label>
+            <input type="text" readOnly placeholder="Preenchida pelo código"
+              style={{ background: "rgba(0,0,0,0.03)", color: codigo && !codigoValido ? "var(--critical)" : "var(--text)" }}
+              value={codigo && !codigoValido ? "Código não encontrado" : descricao} />
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label>Quantidade produzida</label>
+              <input type="number" min="0" step="any" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Data</label>
+              <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Turno</label>
+            <select value={turno} onChange={(e) => setTurno(e.target.value)}>
+              <option>Turno 1</option><option>Turno 2</option><option>Turno 3</option>
+            </select>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Registrar"}</button>
+          </div>
+        </form>
+      </div>
+    </Modal>
+  );
+}
+
+// ---- PARTE 2: Rendimento (Tabela 2) ----
+function SapatasRendimento() {
+  const [lista, setLista] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNovo, setShowNovo] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [excluindo, setExcluindo] = useState(null);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await sb.from("sapatas_rendimento").select("*").order("sapata");
+    setLista(data || []);
+    setLoading(false);
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  return (
+    <div className="card section">
+      <div className="flex-between" style={{ marginBottom: 14 }}>
+        <h2>Consumo médio de sapatas</h2>
+        <button className="btn btn-primary" onClick={() => setShowNovo(true)}>+ Nova sapata</button>
+      </div>
+      <p className="small muted" style={{ marginTop: -6, marginBottom: 14 }}>
+        Identifique a sapata pelo diâmetro + letra (L = longa, C = curta). Ex: 244L, 323C. Rendimento = tubos produzidos por 1 conjunto.
+      </p>
+      <div className="table-scroll">
+        <table className="data-table sticky-head">
+          <thead><tr><th>Sapata</th><th>Rendimento (tubos)</th><th></th></tr></thead>
+          <tbody>
+            {lista.map((r) => (
+              <tr key={r.sapata}>
+                <td>{r.sapata}</td>
+                <td>{fmtNum(r.rendimento)}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <div className="icon-actions">
+                    <IconButton kind="edit" title="Editar" onClick={() => setEditando(r)} />
+                    <IconButton kind="delete" title="Excluir" onClick={() => setExcluindo(r)} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!loading && lista.length === 0 && (
+              <tr><td colSpan="3"><div className="empty-state">Nenhuma sapata cadastrada.</div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {showNovo && <RendimentoModal onClose={() => setShowNovo(false)} onSaved={() => { setShowNovo(false); carregar(); }} />}
+      {editando && <RendimentoModal rend={editando} onClose={() => setEditando(null)} onSaved={() => { setEditando(null); carregar(); }} />}
+      {excluindo && (
+        <ConfirmModal titulo="Excluir sapata" mensagem={`Excluir a sapata "${excluindo.sapata}"?`}
+          onClose={() => setExcluindo(null)}
+          onConfirm={async () => { await sb.rpc("excluir_rendimento", { p_sapata: excluindo.sapata }); setExcluindo(null); carregar(); }} />
+      )}
+    </div>
+  );
+}
+
+function RendimentoModal({ rend, onClose, onSaved }) {
+  const editMode = !!rend;
+  const [sapata, setSapata] = useState(rend ? rend.sapata : "");
+  const [rendimento, setRendimento] = useState(rend ? rend.rendimento : "");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!sapata.trim()) { setErro("Informe a sapata (ex: 244L)."); return; }
+    if (!parseSapata(sapata)) { setErro("Formato inválido. Use diâmetro + L ou C. Ex: 244L, 323C."); return; }
+    setSalvando(true);
+    const fn = editMode ? "editar_rendimento" : "criar_rendimento";
+    const { data, error } = await sb.rpc(fn, { p_sapata: sapata.trim(), p_rendimento: Number(rendimento) || 0 });
+    setSalvando(false);
+    if (error) { setErro("Não foi possível salvar."); return; }
+    if (data === false) { setErro("Já existe essa sapata cadastrada."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>{editMode ? "Editar sapata" : "Nova sapata"}</h2>
+        {erro && <div className="login-error">{erro}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Sapata (diâmetro + L/C)</label>
+            <input type="text" value={sapata} onChange={(e) => setSapata(e.target.value)} disabled={editMode} placeholder="Ex: 244L" />
+          </div>
+          <div className="field">
+            <label>Rendimento (tubos por conjunto)</label>
+            <input type="number" min="0" step="any" value={rendimento} onChange={(e) => setRendimento(e.target.value)} />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+          </div>
+        </form>
+      </div>
+    </Modal>
+  );
+}
+
+// ---- PARTE 3: Análise de planejamento ----
+function SapatasAnalise({ itens }) {
+  const [processando, setProcessando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [resultado, setResultado] = useState(null); // { porModelo, porOrdem }
+  const [rendimentos, setRendimentos] = useState([]);
+  const [estoqueSap, setEstoqueSap] = useState({});
+
+  // carrega rendimentos (tabela 2) e estoque de sapatas (produção)
+  const carregarBase = useCallback(async () => {
+    const { data: rend } = await sb.from("sapatas_rendimento").select("*");
+    setRendimentos(rend || []);
+    const { data: est } = await sb.from("vw_sapatas_estoque").select("*");
+    // estoque por "modelo" — modelo = código do produto? Não: modelo é a sapata (244L/244C).
+    // A produção registra por código do produto; o modelo de sapata é derivado.
+    // Para o saldo, somamos a produção por sapata-modelo via descrição do item.
+    const mapa = {};
+    (est || []).forEach((e) => {
+      // tenta derivar diâmetro da descrição do produto produzido
+      const diam = extrairDiametro(e.descricao);
+      if (diam == null) return;
+      // não sabemos L/C só pela produção; guardamos por diâmetro para uso opcional
+      mapa[e.codigo] = { diam, total: Number(e.total_produzido || 0), descricao: e.descricao };
+    });
+    setEstoqueSap(mapa);
+  }, []);
+  useEffect(() => { carregarBase(); }, [carregarBase]);
+
+  // Encontra a melhor sapata (maior diâmetro dentro da faixa: ref até -5%) para dado diâmetro de referência
+  function melhorSapataDiametro(diamRef) {
+    // diâmetros distintos disponíveis na tabela de rendimento
+    const diams = Array.from(new Set(rendimentos.map((r) => parseSapata(r.sapata)).filter(Boolean).map((s) => s.diam)));
+    const limiteInf = diamRef * 0.95;
+    const candidatos = diams.filter((d) => d <= diamRef && d >= limiteInf);
+    if (candidatos.length === 0) return null;
+    return Math.max(...candidatos); // maior dentro da faixa
+  }
+
+  function rendimentoDe(diam, letra) {
+    // procura a sapata "<diam><letra>" na tabela; tolera formatação do diâmetro
+    const alvo = rendimentos.find((r) => {
+      const p = parseSapata(r.sapata);
+      return p && Math.abs(p.diam - diam) < 0.001 && p.letra === letra;
+    });
+    return alvo ? Number(alvo.rendimento) : null;
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setErro(""); setResultado(null); setProcessando(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+      if (rows.length === 0) throw new Error("Planilha vazia.");
+
+      const headers = Object.keys(rows[0]);
+      const colDesc = headers.find((h) => h.trim().toLowerCase().startsWith("descrição produto") || h.trim().toLowerCase().startsWith("descricao produto"));
+      const colInicio = headers.find((h) => h.trim().toLowerCase().startsWith("início") || h.trim().toLowerCase().startsWith("inicio"));
+      const colPecas = headers.find((h) => h.trim().toLowerCase().includes("peças previstas") || h.trim().toLowerCase().includes("pecas previstas"));
+      const colPedido = headers.find((h) => h.trim().toLowerCase().includes("pedido"));
+      const colOrdem = headers.find((h) => h.trim().toLowerCase() === "ordem");
+      if (!colDesc || !colPecas) throw new Error('A planilha precisa ter as colunas "Descrição produto" e "Peças previstas para produção".');
+
+      // agrega necessidade por modelo de sapata (ex "244L", "244C")
+      const porModelo = {}; // "244L" -> { qtd, tubos }
+      const porOrdem = [];   // uma linha por produto/ordem
+
+      rows.forEach((r) => {
+        const desc = r[colDesc];
+        const tubos = Number(r[colPecas]) || 0;
+        const diamRef = extrairDiametro(desc);
+        if (diamRef == null || tubos <= 0) return;
+
+        const diamSap = melhorSapataDiametro(diamRef);
+        let modeloBase = null, conjuntos = 0, longa = 0, curta = 0, rendL = null, rendC = null;
+        if (diamSap != null) {
+          rendL = rendimentoDe(diamSap, "L");
+          rendC = rendimentoDe(diamSap, "C");
+          // usa o rendimento do conjunto (assumindo L e C com mesmo rendimento de conjunto);
+          // se só um existir, usa o que houver
+          const rend = rendL || rendC;
+          if (rend && rend > 0) {
+            conjuntos = Math.ceil(tubos / rend);
+            longa = conjuntos * 2;   // 2 LONGA por conjunto
+            curta = conjuntos * 3;   // 3 CURTA por conjunto
+            modeloBase = diamSap;
+          }
+        }
+
+        // acumula por modelo
+        if (modeloBase != null) {
+          const kL = `${modeloBase}L`, kC = `${modeloBase}C`;
+          porModelo[kL] = porModelo[kL] || { qtd: 0, tubos: 0 };
+          porModelo[kC] = porModelo[kC] || { qtd: 0, tubos: 0 };
+          porModelo[kL].qtd += longa; porModelo[kL].tubos += tubos;
+          porModelo[kC].qtd += curta; porModelo[kC].tubos += tubos;
+        }
+
+        porOrdem.push({
+          data: colInicio ? r[colInicio] : null,
+          pedidoItem: colPedido ? r[colPedido] : "",
+          ordem: colOrdem ? r[colOrdem] : "",
+          descricao: desc,
+          diamRef,
+          modelo: modeloBase != null ? `${modeloBase}` : "—",
+          conjuntos,
+          curta, longa,
+          tubos,
+        });
+      });
+
+      // monta lista final por modelo com estoque e saldo
+      // estoque por modelo de sapata: soma da produção cujo diâmetro do produto == diâmetro do modelo
+      const estoquePorDiam = {};
+      Object.values(estoqueSap).forEach((e) => {
+        estoquePorDiam[e.diam] = (estoquePorDiam[e.diam] || 0) + e.total;
+      });
+
+      const modelos = Object.keys(porModelo).sort().map((k) => {
+        const p = parseSapata(k);
+        const estoque = p ? (estoquePorDiam[p.diam] || 0) : 0;
+        const necessidade = porModelo[k].qtd;
+        const saldo = Math.max(0, necessidade - estoque); // positivo => precisa repor; se sobra, zero
+        return { modelo: k, quantidade: necessidade, tubos: porModelo[k].tubos, estoque, saldo };
+      });
+
+      setResultado({ modelos, porOrdem });
+    } catch (err) {
+      setErro(err.message || "Não foi possível processar a planilha.");
+    } finally {
+      setProcessando(false);
+      e.target.value = "";
+    }
+  }
+
+  function exportar() {
+    if (!resultado) return;
+    const wb = XLSX.utils.book_new();
+    // aba 1: sapatas necessárias
+    const aoa1 = [["Modelo", "Quantidade", "Estoque", "Saldo (repor)", "Tubos a produzir"]];
+    resultado.modelos.forEach((m) => aoa1.push([m.modelo, m.quantidade, m.estoque, m.saldo, m.tubos]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa1), "Sapatas necessárias");
+    // aba 2: resumo por ordem
+    const aoa2 = [["Início (Enfornam.)", "Pedido/Item", "Ordem", "Descrição produto", "Modelo Sapata", "Conjuntos", "Sapata CURTA", "Sapata LONGA", "Tubos"]];
+    resultado.porOrdem.forEach((o) => aoa2.push([o.data, o.pedidoItem, o.ordem, o.descricao, o.modelo, o.conjuntos, o.curta, o.longa, o.tubos]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa2), "Resumo por ordem");
+    XLSX.writeFile(wb, "analise_sapatas.xlsx");
+  }
+
+  return (
+    <div className="card section">
+      <h2 style={{ marginBottom: 6 }}>Análise de planejamento</h2>
+      <p className="small muted" style={{ marginBottom: 16 }}>
+        Anexe a planilha do cronograma (colunas "Descrição produto" e "Peças previstas para produção").
+        O diâmetro é o 1º trecho da descrição (até o 1º espaço). Cada conjunto = 2 sapatas LONGA + 3 CURTA.
+      </p>
+
+      {rendimentos.length === 0 && (
+        <div className="login-error" style={{ marginBottom: 12 }}>
+          Cadastre primeiro os rendimentos na aba "Consumo médio (rendimento)".
+        </div>
+      )}
+      {erro && <div className="login-error">{erro}</div>}
+
+      <label className="btn btn-primary" style={{ cursor: "pointer", display: "inline-block" }}>
+        {processando ? "Processando…" : "Anexar planilha"}
+        <input type="file" accept=".xlsx,.xls" onChange={handleFile} disabled={processando || rendimentos.length === 0} style={{ display: "none" }} />
+      </label>
+
+      {resultado && (
+        <>
+          <div className="flex-between" style={{ margin: "24px 0 12px" }}>
+            <h2>Sapatas necessárias</h2>
+            <button className="btn btn-secondary" onClick={exportar}>⤓ Exportar Excel</button>
+          </div>
+          <div className="table-scroll">
+            <table className="data-table sticky-head">
+              <thead><tr><th>Modelo</th><th>Quantidade</th><th>Estoque</th><th>Saldo (repor)</th><th>Tubos a produzir</th></tr></thead>
+              <tbody>
+                {resultado.modelos.map((m) => (
+                  <tr key={m.modelo} className={m.saldo > 0 ? "row-critical" : ""}>
+                    <td>{m.modelo}</td>
+                    <td>{fmtNum(m.quantidade)}</td>
+                    <td>{fmtNum(m.estoque)}</td>
+                    <td>{m.saldo > 0 ? <span className="badge badge-critical">{fmtNum(m.saldo)}</span> : "0"}</td>
+                    <td>{fmtNum(m.tubos)}</td>
+                  </tr>
+                ))}
+                {resultado.modelos.length === 0 && (
+                  <tr><td colSpan="5"><div className="empty-state">Nenhum modelo calculado. Verifique se os diâmetros da planilha têm sapata correspondente cadastrada.</div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 style={{ margin: "24px 0 12px" }}>Resumo por ordem</h2>
+          <div className="table-scroll tall">
+            <table className="data-table sticky-head">
+              <thead><tr><th>Início (Enfornam.)</th><th>Pedido/Item</th><th>Ordem</th><th>Descrição produto</th><th>Modelo Sapata</th><th>Conjuntos</th><th>Sapata CURTA</th><th>Sapata LONGA</th><th>Tubos</th></tr></thead>
+              <tbody>
+                {resultado.porOrdem.map((o, idx) => (
+                  <tr key={idx}>
+                    <td>{o.data ? fmtDate(o.data) : "—"}</td>
+                    <td>{o.pedidoItem || "—"}</td>
+                    <td>{o.ordem || "—"}</td>
+                    <td>{o.descricao}</td>
+                    <td>{o.modelo}</td>
+                    <td>{fmtNum(o.conjuntos)}</td>
+                    <td>{fmtNum(o.curta)}</td>
+                    <td>{fmtNum(o.longa)}</td>
+                    <td>{fmtNum(o.tubos)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // CONFIGURAÇÕES
 // ============================================================================
 function Configuracoes({ user, onItensChange }) {
@@ -2357,6 +2866,8 @@ function App() {
           <Saida user={user} itens={itens} />
         ) : view === "estoque" ? (
           <Estoque />
+        ) : view === "sapatas" ? (
+          <SapatasUS user={user} itens={itens} />
         ) : (
           <Configuracoes user={user} onItensChange={carregarItens} />
         )}
