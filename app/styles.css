@@ -335,6 +335,8 @@ h3 { font-size: 13px; font-weight: 600; }
 .btn-secondary { background: rgba(0,0,0,0.05); color: var(--text); }
 .btn-secondary:hover { background: rgba(0,0,0,0.08); }
 .btn-danger { background: var(--critical-bg); color: var(--critical); }
+.btn-success { background: #2e9e5b; color: #fff; }
+.btn-success:hover { background: #33ab63; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-full { width: 100%; }
 
