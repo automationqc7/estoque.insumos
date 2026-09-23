@@ -2373,21 +2373,25 @@ function SapatasAnalise({ itens }) {
             <table className="data-table sticky-head resumo-ordem">
               <thead>
                 <tr>
-                  <th rowSpan="2">Início (Enfornam.)</th>
-                  <th rowSpan="2">Pedido/Item</th>
-                  <th rowSpan="2">Ordem</th>
-                  <th rowSpan="2">Descrição produto</th>
-                  <th rowSpan="2">Tubos</th>
-                  <th colSpan="7" className="grp grp-p">Sapata principal</th>
-                  <th colSpan="7" className="grp grp-a">Sapata alternativa</th>
-                </tr>
-                <tr>
-                  <th className="grp-p">Modelo</th>
-                  <th className="grp-p">Necessidade Curta</th><th className="grp-p">Estoque Curta</th><th className="grp-p">Saldo Curta</th>
-                  <th className="grp-p">Necessidade Longa</th><th className="grp-p">Estoque Longa</th><th className="grp-p">Saldo Longa</th>
-                  <th className="grp-a">Modelo</th>
-                  <th className="grp-a">Necessidade Curta</th><th className="grp-a">Estoque Curta</th><th className="grp-a">Saldo Curta</th>
-                  <th className="grp-a">Necessidade Longa</th><th className="grp-a">Estoque Longa</th><th className="grp-a">Saldo Longa</th>
+                  <th>Início (Enfornam.)</th>
+                  <th>Pedido/Item</th>
+                  <th>Ordem</th>
+                  <th>Descrição produto</th>
+                  <th>Tubos</th>
+                  <th className="col-p">Modelo (princ.)</th>
+                  <th className="col-p">Necessidade Curta (princ.)</th>
+                  <th className="col-p">Estoque Curta (princ.)</th>
+                  <th className="col-p">Saldo Curta (princ.)</th>
+                  <th className="col-p">Necessidade Longa (princ.)</th>
+                  <th className="col-p">Estoque Longa (princ.)</th>
+                  <th className="col-p">Saldo Longa (princ.)</th>
+                  <th className="col-a">Modelo (alt.)</th>
+                  <th className="col-a">Necessidade Curta (alt.)</th>
+                  <th className="col-a">Estoque Curta (alt.)</th>
+                  <th className="col-a">Saldo Curta (alt.)</th>
+                  <th className="col-a">Necessidade Longa (alt.)</th>
+                  <th className="col-a">Estoque Longa (alt.)</th>
+                  <th className="col-a">Saldo Longa (alt.)</th>
                 </tr>
               </thead>
               <tbody>
