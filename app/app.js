@@ -2177,9 +2177,9 @@ function SapatasAnalise({ itens }) {
           const curta = conjuntos * 3;
           const modeloL = `${diamBase}L`, modeloC = `${diamBase}C`;
           const estL = estoqueModelo(modeloL), estC = estoqueModelo(modeloC);
-          // saldo em nº de sapatas (necessário − estoque), positivo = falta repor
-          const saldoL = longa - estL;
-          const saldoC = curta - estC;
+          // saldo = estoque − necessidade (negativo = falta; positivo = sobra em estoque)
+          const saldoL = estL - longa;
+          const saldoC = estC - curta;
           return {
             base: diamBase, conjuntos,
             modeloL, modeloC,
@@ -2222,7 +2222,7 @@ function SapatasAnalise({ itens }) {
       const modelos = Object.keys(porModelo).sort().map((k) => {
         const necessidade = porModelo[k].qtd;
         const estoque = estoqueModelo(k);
-        const saldo = Math.max(0, necessidade - estoque);
+        const saldo = estoque - necessidade;
         return { modelo: k, quantidade: necessidade, tubos: porModelo[k].tubos, estoque, saldo };
       });
 
@@ -2245,7 +2245,7 @@ function SapatasAnalise({ itens }) {
   function exportar() {
     if (!resultado) return;
     const wb = XLSX.utils.book_new();
-    const aoa1 = [["Carruagens consideradas:", resultado.carruagens], [], ["Modelo", "Quantidade", "Estoque", "Saldo (repor)", "Tubos a produzir"]];
+    const aoa1 = [["Carruagens consideradas:", resultado.carruagens], [], ["Modelo", "Quantidade", "Estoque", "Saldo", "Tubos a produzir"]];
     resultado.modelos.forEach((m) => aoa1.push([m.modelo, m.quantidade, m.estoque, m.saldo, m.tubos]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa1), "Sapatas necessárias");
 
@@ -2326,14 +2326,14 @@ function SapatasAnalise({ itens }) {
           </div>
           <div className="table-scroll">
             <table className="data-table sticky-head">
-              <thead><tr><th>Modelo</th><th>Quantidade</th><th>Estoque</th><th>Saldo (repor)</th><th>Tubos a produzir</th></tr></thead>
+              <thead><tr><th>Modelo</th><th>Quantidade</th><th>Estoque</th><th>Saldo</th><th>Tubos a produzir</th></tr></thead>
               <tbody>
                 {resultado.modelos.map((m) => (
-                  <tr key={m.modelo} className={m.saldo > 0 ? "row-critical" : ""}>
+                  <tr key={m.modelo} className={m.saldo < 0 ? "row-saldo-neg" : ""}>
                     <td>{m.modelo}</td>
                     <td>{fmtNum(m.quantidade)}</td>
                     <td>{fmtNum(m.estoque)}</td>
-                    <td>{m.saldo > 0 ? <span className="badge badge-critical">{fmtNum(m.saldo)}</span> : "0"}</td>
+                    <td>{m.saldo < 0 ? <span className="badge badge-critical">{fmtNum(m.saldo)}</span> : fmtNum(m.saldo)}</td>
                     <td>{fmtNum(m.tubos)}</td>
                   </tr>
                 ))}
@@ -2364,26 +2364,10 @@ function SapatasAnalise({ itens }) {
               </tbody>
             </table>
           </div>
-          {resultado.cronograma.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <ChartBox
-                type="bar"
-                height={320}
-                data={cronogramaChartData(resultado.cronograma)}
-                options={{
-                  plugins: { legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 10 } } } },
-                  scales: {
-                    x: { stacked: true, grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
-                    y: { stacked: true, grid: { color: "rgba(0,0,0,0.06)" }, beginAtZero: true, ticks: { font: { family: "Inter" } } },
-                  },
-                }}
-              />
-            </div>
-          )}
 
           <h2 style={{ margin: "24px 0 12px" }}>Resumo por ordem</h2>
           <p className="small muted" style={{ marginTop: -6, marginBottom: 12 }}>
-            Necessidade (sapatas por conjunto) × Estoque × Saldo, para a sapata principal e a alternativa. Saldo negativo (falta repor) destacado em vermelho claro.
+            Necessidade (sapatas por conjunto) × Estoque × Saldo, para a sapata principal e a alternativa. Saldo negativo (falta em estoque) destacado em vermelho claro.
           </p>
           <div className="table-scroll tall">
             <table className="data-table sticky-head resumo-ordem">
@@ -2409,10 +2393,10 @@ function SapatasAnalise({ itens }) {
               <tbody>
                 {resultado.porOrdem.map((o, idx) => {
                   const p = o.principal, a = o.alternativa;
-                  const negativo = (p && (p.saldoCurta > 0 || p.saldoLonga > 0));
+                  const negativo = (p && (p.saldoCurta < 0 || p.saldoLonga < 0));
                   const cel = (v, isSaldo) => {
                     if (v == null) return "—";
-                    if (isSaldo && v > 0) return <span className="badge badge-critical">{fmtNum(v)}</span>;
+                    if (isSaldo && v < 0) return <span className="badge badge-critical">{fmtNum(v)}</span>;
                     return fmtNum(v);
                   };
                   return (
