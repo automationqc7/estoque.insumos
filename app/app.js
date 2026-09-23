@@ -2087,7 +2087,7 @@ function SapatasAnalise({ itens }) {
   const [erro, setErro] = useState("");
   const [resultado, setResultado] = useState(null);
   const [rendimentos, setRendimentos] = useState([]);
-  const [estoquePorDiam, setEstoquePorDiam] = useState({});
+  const [estoquePorModelo, setEstoquePorModelo] = useState({});
   const [carruagens, setCarruagens] = useState(1);
   const [arquivoPendente, setArquivoPendente] = useState(null); // guarda o arquivo até escolher carruagens
   const [perguntarCarr, setPerguntarCarr] = useState(false);
@@ -2095,16 +2095,17 @@ function SapatasAnalise({ itens }) {
   const carregarBase = useCallback(async () => {
     const { data: rend } = await sb.from("sapatas_rendimento").select("*");
     setRendimentos(rend || []);
-    const { data: est } = await sb.from("vw_sapatas_estoque").select("*");
+    // estoque por MODELO = código do produto (ex: "244L"). Vem da view de estoque.
+    const { data: est } = await sb.from("vw_estoque_atual").select("codigo, estoque_atual");
     const mapa = {};
-    (est || []).forEach((e) => {
-      const diam = extrairDiametro(e.descricao);
-      if (diam == null) return;
-      mapa[diam] = (mapa[diam] || 0) + Number(e.total_produzido || 0);
-    });
-    setEstoquePorDiam(mapa);
+    (est || []).forEach((e) => { mapa[String(e.codigo).trim().toUpperCase()] = Number(e.estoque_atual || 0); });
+    setEstoquePorModelo(mapa);
   }, []);
   useEffect(() => { carregarBase(); }, [carregarBase]);
+
+  function estoqueModelo(cod) {
+    return estoquePorModelo[String(cod).trim().toUpperCase()] || 0;
+  }
 
   // diâmetros distintos cadastrados na tabela de rendimento
   function diamsDisponiveis() {
@@ -2165,28 +2166,44 @@ function SapatasAnalise({ itens }) {
         if (diamRef == null || tubos <= 0) return;
 
         const { principal, alternativa } = sapatasParaDiametro(diamRef);
-        let conjuntos = 0, longa = 0, curta = 0, modeloBase = null;
-        const rend = principal != null ? rendConjunto(principal) : null;
-        if (principal != null && rend && rend > 0) {
-          conjuntos = Math.ceil(tubos / rend) * mult;   // multiplica pelas carruagens
-          longa = conjuntos * 2;
-          curta = conjuntos * 3;
-          modeloBase = principal;
+
+        // calcula necessidade de sapatas para um diâmetro-base
+        function calcPara(diamBase) {
+          if (diamBase == null) return null;
+          const rend = rendConjunto(diamBase);
+          if (!rend || rend <= 0) return null;
+          const conjuntos = Math.ceil(tubos / rend) * mult;
+          const longa = conjuntos * 2;
+          const curta = conjuntos * 3;
+          const modeloL = `${diamBase}L`, modeloC = `${diamBase}C`;
+          const estL = estoqueModelo(modeloL), estC = estoqueModelo(modeloC);
+          // saldo em nº de sapatas (necessário − estoque), positivo = falta repor
+          const saldoL = longa - estL;
+          const saldoC = curta - estC;
+          return {
+            base: diamBase, conjuntos,
+            modeloL, modeloC,
+            necessLonga: longa, necessCurta: curta,
+            estLonga: estL, estCurta: estC,
+            saldoLonga: saldoL, saldoCurta: saldoC,
+          };
         }
 
-        if (modeloBase != null) {
-          const kL = modeloBase + "L", kC = modeloBase + "C";
-          porModelo[kL] = porModelo[kL] || { qtd: 0, tubos: 0 };
-          porModelo[kC] = porModelo[kC] || { qtd: 0, tubos: 0 };
-          porModelo[kL].qtd += longa; porModelo[kL].tubos += tubos;
-          porModelo[kC].qtd += curta; porModelo[kC].tubos += tubos;
+        const calcP = calcPara(principal);
+        const calcA = calcPara(alternativa);
 
-          // cronograma por data de necessidade
+        // acumula por modelo (usando a sapata principal) para a tabela "Sapatas necessárias"
+        if (calcP) {
+          porModelo[calcP.modeloL] = porModelo[calcP.modeloL] || { qtd: 0, tubos: 0 };
+          porModelo[calcP.modeloC] = porModelo[calcP.modeloC] || { qtd: 0, tubos: 0 };
+          porModelo[calcP.modeloL].qtd += calcP.necessLonga; porModelo[calcP.modeloL].tubos += tubos;
+          porModelo[calcP.modeloC].qtd += calcP.necessCurta; porModelo[calcP.modeloC].tubos += tubos;
+
           const dISO = parseDataPlan(colInicio ? r[colInicio] : null);
           if (dISO) {
             cronoMap[dISO] = cronoMap[dISO] || {};
-            cronoMap[dISO][kL] = (cronoMap[dISO][kL] || 0) + longa;
-            cronoMap[dISO][kC] = (cronoMap[dISO][kC] || 0) + curta;
+            cronoMap[dISO][calcP.modeloL] = (cronoMap[dISO][calcP.modeloL] || 0) + calcP.necessLonga;
+            cronoMap[dISO][calcP.modeloC] = (cronoMap[dISO][calcP.modeloC] || 0) + calcP.necessCurta;
           }
         }
 
@@ -2196,16 +2213,15 @@ function SapatasAnalise({ itens }) {
           ordem: colOrdem ? r[colOrdem] : "",
           descricao: desc,
           diamRef,
-          modelo: modeloBase != null ? String(modeloBase) : "—",
-          alternativa: alternativa != null ? String(alternativa) : "—",
-          conjuntos, curta, longa, tubos,
+          tubos,
+          principal: calcP,   // pode ser null
+          alternativa: calcA, // pode ser null
         });
       });
 
       const modelos = Object.keys(porModelo).sort().map((k) => {
-        const p = parseSapata(k);
-        const estoque = p ? (estoquePorDiam[p.diam] || 0) : 0;
         const necessidade = porModelo[k].qtd;
+        const estoque = estoqueModelo(k);
         const saldo = Math.max(0, necessidade - estoque);
         return { modelo: k, quantidade: necessidade, tubos: porModelo[k].tubos, estoque, saldo };
       });
@@ -2233,8 +2249,19 @@ function SapatasAnalise({ itens }) {
     resultado.modelos.forEach((m) => aoa1.push([m.modelo, m.quantidade, m.estoque, m.saldo, m.tubos]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa1), "Sapatas necessárias");
 
-    const aoa2 = [["Início (Enfornam.)", "Pedido/Item", "Ordem", "Descrição produto", "Modelo Sapata", "Sapata alternativa", "Conjuntos (x" + resultado.carruagens + ")", "Sapata CURTA", "Sapata LONGA", "Tubos"]];
-    resultado.porOrdem.forEach((o) => aoa2.push([o.data ? fmtDate(o.data) : "", o.pedidoItem, o.ordem, o.descricao, o.modelo, o.alternativa, o.conjuntos, o.curta, o.longa, o.tubos]));
+    const aoa2 = [[
+      "Início (Enfornam.)", "Pedido/Item", "Ordem", "Descrição produto", "Tubos",
+      "Sapata (princ.)", "Nec. CURTA", "Est. CURTA", "Saldo CURTA", "Nec. LONGA", "Est. LONGA", "Saldo LONGA",
+      "Sapata (alt.)", "Nec. CURTA", "Est. CURTA", "Saldo CURTA", "Nec. LONGA", "Est. LONGA", "Saldo LONGA",
+    ]];
+    resultado.porOrdem.forEach((o) => {
+      const p = o.principal, a = o.alternativa;
+      aoa2.push([
+        o.data ? fmtDate(o.data) : "", o.pedidoItem, o.ordem, o.descricao, o.tubos,
+        p ? `${p.base}` : "—", p ? p.necessCurta : "", p ? p.estCurta : "", p ? p.saldoCurta : "", p ? p.necessLonga : "", p ? p.estLonga : "", p ? p.saldoLonga : "",
+        a ? `${a.base}` : "—", a ? a.necessCurta : "", a ? a.estCurta : "", a ? a.saldoCurta : "", a ? a.necessLonga : "", a ? a.estLonga : "", a ? a.saldoLonga : "",
+      ]);
+    });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa2), "Resumo por ordem");
 
     const aoa3 = [["Data necessidade", "Modelo", "Quantidade"]];
@@ -2288,7 +2315,14 @@ function SapatasAnalise({ itens }) {
         <>
           <div className="flex-between" style={{ margin: "24px 0 12px" }}>
             <h2>Sapatas necessárias <span className="small muted" style={{ fontWeight: 400 }}>· {resultado.carruagens} carruagem(s)</span></h2>
-            <button className="btn btn-success" onClick={exportar}>⤓ Exportar Excel</button>
+            <button className="btn btn-success" onClick={exportar}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-3px", marginRight: 5 }}>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <path d="M14 2v6h6"/>
+                <path d="M12 12v6"/><path d="M9.5 15.5L12 18l2.5-2.5"/>
+              </svg>
+              Exportar Excel
+            </button>
           </div>
           <div className="table-scroll">
             <table className="data-table sticky-head">
@@ -2348,24 +2382,65 @@ function SapatasAnalise({ itens }) {
           )}
 
           <h2 style={{ margin: "24px 0 12px" }}>Resumo por ordem</h2>
+          <p className="small muted" style={{ marginTop: -6, marginBottom: 12 }}>
+            Necessidade (sapatas por conjunto) × Estoque × Saldo, para a sapata principal e a alternativa. Saldo negativo (falta repor) destacado em vermelho claro.
+          </p>
           <div className="table-scroll tall">
-            <table className="data-table sticky-head">
-              <thead><tr><th>Início (Enfornam.)</th><th>Pedido/Item</th><th>Ordem</th><th>Descrição produto</th><th>Modelo Sapata</th><th>Sapata alternativa</th><th>Conjuntos</th><th>Sapata CURTA</th><th>Sapata LONGA</th><th>Tubos</th></tr></thead>
+            <table className="data-table sticky-head resumo-ordem">
+              <thead>
+                <tr>
+                  <th rowSpan="2">Início (Enfornam.)</th>
+                  <th rowSpan="2">Pedido/Item</th>
+                  <th rowSpan="2">Ordem</th>
+                  <th rowSpan="2">Descrição produto</th>
+                  <th rowSpan="2">Tubos</th>
+                  <th colSpan="7" className="grp grp-p">Sapata principal</th>
+                  <th colSpan="7" className="grp grp-a">Sapata alternativa</th>
+                </tr>
+                <tr>
+                  <th className="grp-p">Modelo</th>
+                  <th className="grp-p">Nec. C</th><th className="grp-p">Est. C</th><th className="grp-p">Saldo C</th>
+                  <th className="grp-p">Nec. L</th><th className="grp-p">Est. L</th><th className="grp-p">Saldo L</th>
+                  <th className="grp-a">Modelo</th>
+                  <th className="grp-a">Nec. C</th><th className="grp-a">Est. C</th><th className="grp-a">Saldo C</th>
+                  <th className="grp-a">Nec. L</th><th className="grp-a">Est. L</th><th className="grp-a">Saldo L</th>
+                </tr>
+              </thead>
               <tbody>
-                {resultado.porOrdem.map((o, idx) => (
-                  <tr key={idx}>
-                    <td>{o.data ? fmtDate(o.data) : "—"}</td>
-                    <td>{o.pedidoItem || "—"}</td>
-                    <td>{o.ordem || "—"}</td>
-                    <td>{o.descricao}</td>
-                    <td>{o.modelo}</td>
-                    <td>{o.alternativa}</td>
-                    <td>{fmtNum(o.conjuntos)}</td>
-                    <td>{fmtNum(o.curta)}</td>
-                    <td>{fmtNum(o.longa)}</td>
-                    <td>{fmtNum(o.tubos)}</td>
-                  </tr>
-                ))}
+                {resultado.porOrdem.map((o, idx) => {
+                  const p = o.principal, a = o.alternativa;
+                  const negativo = (p && (p.saldoCurta > 0 || p.saldoLonga > 0));
+                  const cel = (v, isSaldo) => {
+                    if (v == null) return "—";
+                    if (isSaldo && v > 0) return <span className="badge badge-critical">{fmtNum(v)}</span>;
+                    return fmtNum(v);
+                  };
+                  return (
+                    <tr key={idx} className={negativo ? "row-critical" : ""}>
+                      <td>{o.data ? fmtDate(o.data) : "—"}</td>
+                      <td>{o.pedidoItem || "—"}</td>
+                      <td>{o.ordem || "—"}</td>
+                      <td>{o.descricao}</td>
+                      <td>{fmtNum(o.tubos)}</td>
+                      {/* principal */}
+                      <td>{p ? p.base : "—"}</td>
+                      <td>{p ? cel(p.necessCurta) : "—"}</td>
+                      <td>{p ? cel(p.estCurta) : "—"}</td>
+                      <td>{p ? cel(p.saldoCurta, true) : "—"}</td>
+                      <td>{p ? cel(p.necessLonga) : "—"}</td>
+                      <td>{p ? cel(p.estLonga) : "—"}</td>
+                      <td>{p ? cel(p.saldoLonga, true) : "—"}</td>
+                      {/* alternativa */}
+                      <td>{a ? a.base : "—"}</td>
+                      <td>{a ? cel(a.necessCurta) : "—"}</td>
+                      <td>{a ? cel(a.estCurta) : "—"}</td>
+                      <td>{a ? cel(a.saldoCurta, true) : "—"}</td>
+                      <td>{a ? cel(a.necessLonga) : "—"}</td>
+                      <td>{a ? cel(a.estLonga) : "—"}</td>
+                      <td>{a ? cel(a.saldoLonga, true) : "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
