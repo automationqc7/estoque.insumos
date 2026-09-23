@@ -499,6 +499,9 @@ table.data-table.sticky-head thead th {
 /* grupos do resumo por ordem (principal x alternativa) */
 table.resumo-ordem thead th.grp { text-align: center; }
 table.resumo-ordem thead th.grp-a { background: #e7f0ea; color: #2e6b45; }
+/* as duas linhas de cabeçalho ficam fixas ao rolar */
+table.resumo-ordem thead tr:first-child th { top: 0; }
+table.resumo-ordem thead tr:nth-child(2) th { top: 33px; }
 
 .badge {
   display: inline-flex;
