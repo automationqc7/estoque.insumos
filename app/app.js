@@ -1773,10 +1773,22 @@ function DashboardAnalytics({ itens }) {
             <h2 style={{ marginBottom: 16 }}>Produção mensal de sapatas</h2>
             {sapProdMensal.length === 0 ? <div className="empty-state">Sem produção registrada.</div> : (
               <ChartBox
-                type="bar"
+                type="line"
                 data={{
                   labels: sapProdMensal.map((r) => labelMes(r.mes)),
-                  datasets: [{ label: "Produzido", data: sapProdMensal.map((r) => r.valor), backgroundColor: "#0071e3", borderRadius: 6, maxBarThickness: 40 }],
+                  datasets: [{
+                    label: "Produzido",
+                    data: sapProdMensal.map((r) => r.valor),
+                    borderColor: "#7bbf8a",
+                    backgroundColor: "rgba(123,191,138,0.18)",
+                    pointBackgroundColor: "#5aa872",
+                    pointBorderColor: "#5aa872",
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                  }],
                 }}
                 options={baseOptions}
               />
@@ -1793,10 +1805,22 @@ function DashboardAnalytics({ itens }) {
             </div>
             {sapProdDiaria.length === 0 ? <div className="empty-state">Sem produção no mês atual{turnoSel !== "todos" ? " para este turno" : ""}.</div> : (
               <ChartBox
-                type="bar"
+                type="line"
                 data={{
                   labels: sapProdDiaria.map((r) => r.dia),
-                  datasets: [{ label: "Produzido", data: sapProdDiaria.map((r) => r.valor), backgroundColor: "#3d8fdc", borderRadius: 5, maxBarThickness: 26 }],
+                  datasets: [{
+                    label: "Produzido",
+                    data: sapProdDiaria.map((r) => r.valor),
+                    borderColor: "#9ccfa8",
+                    backgroundColor: "rgba(156,207,168,0.18)",
+                    pointBackgroundColor: "#7bbf8a",
+                    pointBorderColor: "#7bbf8a",
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                  }],
                 }}
                 options={baseOptions}
               />
@@ -1806,7 +1830,31 @@ function DashboardAnalytics({ itens }) {
           <div className="card section" style={{ gridColumn: "1 / -1" }}>
             <h2 style={{ marginBottom: 16 }}>Sapatas disponíveis em estoque</h2>
             {sapEstoqueTree.length === 0 ? <div className="empty-state">Nenhuma sapata em estoque. Registre produções na aba Sapatas US.</div> : (
-              <TreemapBox dados={sapEstoqueTree} height={360} />
+              <ChartBox
+                type="bar"
+                height={Math.max(300, sapEstoqueTree.length * 30)}
+                data={{
+                  labels: sapEstoqueTree.map((s) => s.nome),
+                  datasets: [{
+                    label: "Em estoque",
+                    data: sapEstoqueTree.map((s) => s.valor),
+                    backgroundColor: sapEstoqueTree.map((_, i) => {
+                      const greens = ["#a6d8b4", "#8fcea1", "#7bbf8a", "#9ccfa8", "#b7e0c2", "#c8e8cf", "#6fb682", "#88c79a"];
+                      return greens[i % greens.length];
+                    }),
+                    borderRadius: 6,
+                    maxBarThickness: 24,
+                  }],
+                }}
+                options={{
+                  indexAxis: "y",
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    x: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" } }, beginAtZero: true },
+                    y: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
+                  },
+                }}
+              />
             )}
           </div>
         </div>
