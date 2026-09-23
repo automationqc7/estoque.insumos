@@ -2399,11 +2399,11 @@ function SapatasAnalise({ itens }) {
                 </tr>
                 <tr>
                   <th className="grp-p">Modelo</th>
-                  <th className="grp-p">Nec. C</th><th className="grp-p">Est. C</th><th className="grp-p">Saldo C</th>
-                  <th className="grp-p">Nec. L</th><th className="grp-p">Est. L</th><th className="grp-p">Saldo L</th>
+                  <th className="grp-p">Necessidade Curta</th><th className="grp-p">Estoque Curta</th><th className="grp-p">Saldo Curta</th>
+                  <th className="grp-p">Necessidade Longa</th><th className="grp-p">Estoque Longa</th><th className="grp-p">Saldo Longa</th>
                   <th className="grp-a">Modelo</th>
-                  <th className="grp-a">Nec. C</th><th className="grp-a">Est. C</th><th className="grp-a">Saldo C</th>
-                  <th className="grp-a">Nec. L</th><th className="grp-a">Est. L</th><th className="grp-a">Saldo L</th>
+                  <th className="grp-a">Necessidade Curta</th><th className="grp-a">Estoque Curta</th><th className="grp-a">Saldo Curta</th>
+                  <th className="grp-a">Necessidade Longa</th><th className="grp-a">Estoque Longa</th><th className="grp-a">Saldo Longa</th>
                 </tr>
               </thead>
               <tbody>
@@ -2416,7 +2416,7 @@ function SapatasAnalise({ itens }) {
                     return fmtNum(v);
                   };
                   return (
-                    <tr key={idx} className={negativo ? "row-critical" : ""}>
+                    <tr key={idx} className={negativo ? "row-saldo-neg" : ""}>
                       <td>{o.data ? fmtDate(o.data) : "—"}</td>
                       <td>{o.pedidoItem || "—"}</td>
                       <td>{o.ordem || "—"}</td>
