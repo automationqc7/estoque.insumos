@@ -201,7 +201,7 @@ const NAV_ITEMS = [
   { key: "reserva", label: "Reserva", icon: "🧾" },
   { key: "saida", label: "Saída", icon: "📤" },
   { key: "estoque", label: "Estoque", icon: "📊" },
-  { key: "sapatas", label: "Sapatas US", icon: "🦶" },
+  { key: "sapatas", label: "Sapatas US", icon: "🥾" },
   { key: "dashboard", label: "Dashboard", icon: "📈" },
   { key: "config", label: "Config.", icon: "⚙️" },
 ];
@@ -1244,6 +1244,59 @@ function ChartBox({ type, data, options, height = 300 }) {
   );
 }
 
+// Treemap (retângulos proporcionais) para o estoque de sapatas
+function TreemapBox({ dados, height = 340 }) {
+  const canvasRef = useRef(null);
+  const instRef = useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || !dados || dados.length === 0) return;
+    if (instRef.current) instRef.current.destroy();
+    const palette = ["#0a4d8c", "#0071e3", "#3d8fdc", "#5aa9e6", "#7cbde8", "#9bcdef", "#2a6aa0", "#b6ddf5", "#1d5f9e", "#4e97dd"];
+    instRef.current = new Chart(canvasRef.current.getContext("2d"), {
+      type: "treemap",
+      data: {
+        datasets: [{
+          tree: dados,
+          key: "valor",
+          groups: ["nome"],
+          spacing: 1,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,0.7)",
+          backgroundColor: (ctx) => {
+            if (ctx.type !== "data") return "transparent";
+            return palette[ctx.dataIndex % palette.length];
+          },
+          labels: {
+            display: true,
+            color: "#fff",
+            font: { family: "Inter", size: 11, weight: "600" },
+            formatter: (ctx) => {
+              const d = ctx.raw._data;
+              return [d.nome, fmtNum(d.valor)];
+            },
+          },
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: (items) => items[0].raw._data.nome, label: (item) => `Estoque: ${fmtNum(item.raw._data.valor)}` } },
+        },
+      },
+    });
+    return () => { if (instRef.current) instRef.current.destroy(); };
+  }, [dados]);
+
+  return (
+    <div style={{ height }}>
+      <canvas ref={canvasRef}></canvas>
+    </div>
+  );
+}
+
 // Converte "YYYY-MM" -> "mmm/yy" para rótulos mais curtos
 function labelMes(ym) {
   const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -1303,6 +1356,9 @@ function DashboardAnalytics({ itens }) {
   const [estoque, setEstoque] = useState([]);
   const [centrosCusto, setCentrosCusto] = useState([]);
   const [precos, setPrecos] = useState({});
+  const [sapProd, setSapProd] = useState([]);
+  const [sapEstoque, setSapEstoque] = useState([]);
+  const [turnoSel, setTurnoSel] = useState("todos");
   const [loading, setLoading] = useState(true);
 
   // filtros
@@ -1330,6 +1386,11 @@ function DashboardAnalytics({ itens }) {
     setPrecos(pmap);
     const { data: cc } = await sb.from("centros_custo").select("numero, descricao").order("numero");
     setCentrosCusto(cc || []);
+    // produção de sapatas + estoque de sapatas (para os gráficos novos)
+    const { data: prod } = await sb.from("sapatas_producao").select("codigo, quantidade, data_producao, turno").limit(20000);
+    setSapProd(prod || []);
+    const { data: sapEst } = await sb.from("vw_sapatas_estoque").select("*");
+    setSapEstoque(sapEst || []);
     setLoading(false);
   }, []);
 
@@ -1457,6 +1518,43 @@ function DashboardAnalytics({ itens }) {
       y: { grid: { color: "rgba(0,0,0,0.06)" }, ticks: { font: { family: "Inter" } }, beginAtZero: true },
     },
   };
+
+  // --- Sapatas: produção mensal ---
+  const sapProdMensal = useMemo(() => {
+    const map = {};
+    sapProd.forEach((p) => {
+      if (!p.data_producao) return;
+      const ym = String(p.data_producao).slice(0, 7);
+      map[ym] = (map[ym] || 0) + Number(p.quantidade || 0);
+    });
+    return Object.keys(map).sort().map((k) => ({ mes: k, valor: map[k] }));
+  }, [sapProd]);
+
+  // --- Sapatas: produção diária do mês corrente (com filtro de turno) ---
+  const sapProdDiaria = useMemo(() => {
+    const agora = new Date();
+    const ym = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+    const map = {};
+    sapProd.forEach((p) => {
+      if (!p.data_producao || String(p.data_producao).slice(0, 7) !== ym) return;
+      if (turnoSel !== "todos" && p.turno !== turnoSel) return;
+      const dia = String(p.data_producao).slice(8, 10);
+      map[dia] = (map[dia] || 0) + Number(p.quantidade || 0);
+    });
+    return Object.keys(map).sort().map((k) => ({ dia: k, valor: map[k] }));
+  }, [sapProd, turnoSel]);
+
+  // --- Sapatas: estoque por modelo (treemap) ---
+  const sapEstoqueTree = useMemo(() => {
+    return sapEstoque
+      .filter((e) => Number(e.total_produzido) > 0)
+      .map((e) => ({ nome: (e.descricao || e.codigo).slice(0, 24), codigo: e.codigo, valor: Number(e.total_produzido) }))
+      .sort((a, b) => b.valor - a.valor);
+  }, [sapEstoque]);
+
+  const turnosDisp = useMemo(() => {
+    return Array.from(new Set(sapProd.map((p) => p.turno).filter(Boolean))).sort();
+  }, [sapProd]);
 
   const codigosDisponiveis = useMemo(
     () => Object.values(itens).sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "")),
@@ -1670,15 +1768,52 @@ function DashboardAnalytics({ itens }) {
               />
             )}
           </div>
+
+          <div className="card section">
+            <h2 style={{ marginBottom: 16 }}>Produção mensal de sapatas</h2>
+            {sapProdMensal.length === 0 ? <div className="empty-state">Sem produção registrada.</div> : (
+              <ChartBox
+                type="bar"
+                data={{
+                  labels: sapProdMensal.map((r) => labelMes(r.mes)),
+                  datasets: [{ label: "Produzido", data: sapProdMensal.map((r) => r.valor), backgroundColor: "#0071e3", borderRadius: 6, maxBarThickness: 40 }],
+                }}
+                options={baseOptions}
+              />
+            )}
+          </div>
+
+          <div className="card section">
+            <div className="flex-between" style={{ marginBottom: 16 }}>
+              <h2>Produção diária (mês atual)</h2>
+              <select value={turnoSel} onChange={(e) => setTurnoSel(e.target.value)} style={{ maxWidth: 150, fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                <option value="todos">Todos os turnos</option>
+                {turnosDisp.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            {sapProdDiaria.length === 0 ? <div className="empty-state">Sem produção no mês atual{turnoSel !== "todos" ? " para este turno" : ""}.</div> : (
+              <ChartBox
+                type="bar"
+                data={{
+                  labels: sapProdDiaria.map((r) => r.dia),
+                  datasets: [{ label: "Produzido", data: sapProdDiaria.map((r) => r.valor), backgroundColor: "#3d8fdc", borderRadius: 5, maxBarThickness: 26 }],
+                }}
+                options={baseOptions}
+              />
+            )}
+          </div>
+
+          <div className="card section" style={{ gridColumn: "1 / -1" }}>
+            <h2 style={{ marginBottom: 16 }}>Sapatas disponíveis em estoque</h2>
+            {sapEstoqueTree.length === 0 ? <div className="empty-state">Nenhuma sapata em estoque. Registre produções na aba Sapatas US.</div> : (
+              <TreemapBox dados={sapEstoqueTree} height={360} />
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-// ============================================================================
-// SAPATAS US (produção + rendimento + análise de planejamento)
-// ============================================================================
 
 // Extrai o diâmetro da descrição do produto: primeiro trecho até o 1º espaço.
 // Ex: "244,40 x 13,84 - P29HBV..." -> 244.40
@@ -1950,55 +2085,62 @@ function RendimentoModal({ rend, onClose, onSaved }) {
 function SapatasAnalise({ itens }) {
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
-  const [resultado, setResultado] = useState(null); // { porModelo, porOrdem }
+  const [resultado, setResultado] = useState(null);
   const [rendimentos, setRendimentos] = useState([]);
-  const [estoqueSap, setEstoqueSap] = useState({});
+  const [estoquePorDiam, setEstoquePorDiam] = useState({});
+  const [carruagens, setCarruagens] = useState(1);
+  const [arquivoPendente, setArquivoPendente] = useState(null); // guarda o arquivo até escolher carruagens
+  const [perguntarCarr, setPerguntarCarr] = useState(false);
 
-  // carrega rendimentos (tabela 2) e estoque de sapatas (produção)
   const carregarBase = useCallback(async () => {
     const { data: rend } = await sb.from("sapatas_rendimento").select("*");
     setRendimentos(rend || []);
     const { data: est } = await sb.from("vw_sapatas_estoque").select("*");
-    // estoque por "modelo" — modelo = código do produto? Não: modelo é a sapata (244L/244C).
-    // A produção registra por código do produto; o modelo de sapata é derivado.
-    // Para o saldo, somamos a produção por sapata-modelo via descrição do item.
     const mapa = {};
     (est || []).forEach((e) => {
-      // tenta derivar diâmetro da descrição do produto produzido
       const diam = extrairDiametro(e.descricao);
       if (diam == null) return;
-      // não sabemos L/C só pela produção; guardamos por diâmetro para uso opcional
-      mapa[e.codigo] = { diam, total: Number(e.total_produzido || 0), descricao: e.descricao };
+      mapa[diam] = (mapa[diam] || 0) + Number(e.total_produzido || 0);
     });
-    setEstoqueSap(mapa);
+    setEstoquePorDiam(mapa);
   }, []);
   useEffect(() => { carregarBase(); }, [carregarBase]);
 
-  // Encontra a melhor sapata (maior diâmetro dentro da faixa: ref até -5%) para dado diâmetro de referência
-  function melhorSapataDiametro(diamRef) {
-    // diâmetros distintos disponíveis na tabela de rendimento
-    const diams = Array.from(new Set(rendimentos.map((r) => parseSapata(r.sapata)).filter(Boolean).map((s) => s.diam)));
-    const limiteInf = diamRef * 0.95;
-    const candidatos = diams.filter((d) => d <= diamRef && d >= limiteInf);
-    if (candidatos.length === 0) return null;
-    return Math.max(...candidatos); // maior dentro da faixa
+  // diâmetros distintos cadastrados na tabela de rendimento
+  function diamsDisponiveis() {
+    return Array.from(new Set(rendimentos.map((r) => parseSapata(r.sapata)).filter(Boolean).map((s) => s.diam))).sort((a, b) => b - a);
   }
-
+  // principal = maior dentro da faixa (ref até -5%); alternativa = segunda maior na faixa
+  function sapatasParaDiametro(diamRef) {
+    const limiteInf = diamRef * 0.95;
+    const candidatos = diamsDisponiveis().filter((d) => d <= diamRef && d >= limiteInf).sort((a, b) => b - a);
+    return { principal: candidatos[0] ?? null, alternativa: candidatos[1] ?? null };
+  }
   function rendimentoDe(diam, letra) {
-    // procura a sapata "<diam><letra>" na tabela; tolera formatação do diâmetro
     const alvo = rendimentos.find((r) => {
       const p = parseSapata(r.sapata);
       return p && Math.abs(p.diam - diam) < 0.001 && p.letra === letra;
     });
     return alvo ? Number(alvo.rendimento) : null;
   }
+  function rendConjunto(diam) {
+    return rendimentoDe(diam, "L") || rendimentoDe(diam, "C") || null;
+  }
 
-  async function handleFile(e) {
+  function onEscolherArquivo(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setErro(""); setResultado(null); setProcessando(true);
+    setArquivoPendente(file);
+    setPerguntarCarr(true);
+    e.target.value = "";
+  }
+
+  async function processar() {
+    if (!arquivoPendente) return;
+    setPerguntarCarr(false); setErro(""); setResultado(null); setProcessando(true);
+    const mult = Number(carruagens) || 1;
     try {
-      const buf = await file.arrayBuffer();
+      const buf = await arquivoPendente.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
@@ -2012,9 +2154,9 @@ function SapatasAnalise({ itens }) {
       const colOrdem = headers.find((h) => h.trim().toLowerCase() === "ordem");
       if (!colDesc || !colPecas) throw new Error('A planilha precisa ter as colunas "Descrição produto" e "Peças previstas para produção".');
 
-      // agrega necessidade por modelo de sapata (ex "244L", "244C")
-      const porModelo = {}; // "244L" -> { qtd, tubos }
-      const porOrdem = [];   // uma linha por produto/ordem
+      const porModelo = {};
+      const porOrdem = [];
+      const cronoMap = {}; // dataISO -> { modelo -> qtd }
 
       rows.forEach((r) => {
         const desc = r[colDesc];
@@ -2022,79 +2164,85 @@ function SapatasAnalise({ itens }) {
         const diamRef = extrairDiametro(desc);
         if (diamRef == null || tubos <= 0) return;
 
-        const diamSap = melhorSapataDiametro(diamRef);
-        let modeloBase = null, conjuntos = 0, longa = 0, curta = 0, rendL = null, rendC = null;
-        if (diamSap != null) {
-          rendL = rendimentoDe(diamSap, "L");
-          rendC = rendimentoDe(diamSap, "C");
-          // usa o rendimento do conjunto (assumindo L e C com mesmo rendimento de conjunto);
-          // se só um existir, usa o que houver
-          const rend = rendL || rendC;
-          if (rend && rend > 0) {
-            conjuntos = Math.ceil(tubos / rend);
-            longa = conjuntos * 2;   // 2 LONGA por conjunto
-            curta = conjuntos * 3;   // 3 CURTA por conjunto
-            modeloBase = diamSap;
-          }
+        const { principal, alternativa } = sapatasParaDiametro(diamRef);
+        let conjuntos = 0, longa = 0, curta = 0, modeloBase = null;
+        const rend = principal != null ? rendConjunto(principal) : null;
+        if (principal != null && rend && rend > 0) {
+          conjuntos = Math.ceil(tubos / rend) * mult;   // multiplica pelas carruagens
+          longa = conjuntos * 2;
+          curta = conjuntos * 3;
+          modeloBase = principal;
         }
 
-        // acumula por modelo
         if (modeloBase != null) {
-          const kL = `${modeloBase}L`, kC = `${modeloBase}C`;
+          const kL = modeloBase + "L", kC = modeloBase + "C";
           porModelo[kL] = porModelo[kL] || { qtd: 0, tubos: 0 };
           porModelo[kC] = porModelo[kC] || { qtd: 0, tubos: 0 };
           porModelo[kL].qtd += longa; porModelo[kL].tubos += tubos;
           porModelo[kC].qtd += curta; porModelo[kC].tubos += tubos;
+
+          // cronograma por data de necessidade
+          const dISO = parseDataPlan(colInicio ? r[colInicio] : null);
+          if (dISO) {
+            cronoMap[dISO] = cronoMap[dISO] || {};
+            cronoMap[dISO][kL] = (cronoMap[dISO][kL] || 0) + longa;
+            cronoMap[dISO][kC] = (cronoMap[dISO][kC] || 0) + curta;
+          }
         }
 
         porOrdem.push({
-          data: colInicio ? r[colInicio] : null,
+          data: parseDataPlan(colInicio ? r[colInicio] : null),
           pedidoItem: colPedido ? r[colPedido] : "",
           ordem: colOrdem ? r[colOrdem] : "",
           descricao: desc,
           diamRef,
-          modelo: modeloBase != null ? `${modeloBase}` : "—",
-          conjuntos,
-          curta, longa,
-          tubos,
+          modelo: modeloBase != null ? String(modeloBase) : "—",
+          alternativa: alternativa != null ? String(alternativa) : "—",
+          conjuntos, curta, longa, tubos,
         });
-      });
-
-      // monta lista final por modelo com estoque e saldo
-      // estoque por modelo de sapata: soma da produção cujo diâmetro do produto == diâmetro do modelo
-      const estoquePorDiam = {};
-      Object.values(estoqueSap).forEach((e) => {
-        estoquePorDiam[e.diam] = (estoquePorDiam[e.diam] || 0) + e.total;
       });
 
       const modelos = Object.keys(porModelo).sort().map((k) => {
         const p = parseSapata(k);
         const estoque = p ? (estoquePorDiam[p.diam] || 0) : 0;
         const necessidade = porModelo[k].qtd;
-        const saldo = Math.max(0, necessidade - estoque); // positivo => precisa repor; se sobra, zero
+        const saldo = Math.max(0, necessidade - estoque);
         return { modelo: k, quantidade: necessidade, tubos: porModelo[k].tubos, estoque, saldo };
       });
 
-      setResultado({ modelos, porOrdem });
+      // cronograma: lista ordenada por data
+      const cronograma = Object.keys(cronoMap).sort().map((d) => {
+        const modelosData = cronoMap[d];
+        const total = Object.values(modelosData).reduce((a, b) => a + b, 0);
+        return { data: d, modelos: modelosData, total };
+      });
+
+      setResultado({ modelos, porOrdem, cronograma, carruagens: mult });
     } catch (err) {
       setErro(err.message || "Não foi possível processar a planilha.");
     } finally {
       setProcessando(false);
-      e.target.value = "";
+      setArquivoPendente(null);
     }
   }
 
   function exportar() {
     if (!resultado) return;
     const wb = XLSX.utils.book_new();
-    // aba 1: sapatas necessárias
-    const aoa1 = [["Modelo", "Quantidade", "Estoque", "Saldo (repor)", "Tubos a produzir"]];
+    const aoa1 = [["Carruagens consideradas:", resultado.carruagens], [], ["Modelo", "Quantidade", "Estoque", "Saldo (repor)", "Tubos a produzir"]];
     resultado.modelos.forEach((m) => aoa1.push([m.modelo, m.quantidade, m.estoque, m.saldo, m.tubos]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa1), "Sapatas necessárias");
-    // aba 2: resumo por ordem
-    const aoa2 = [["Início (Enfornam.)", "Pedido/Item", "Ordem", "Descrição produto", "Modelo Sapata", "Conjuntos", "Sapata CURTA", "Sapata LONGA", "Tubos"]];
-    resultado.porOrdem.forEach((o) => aoa2.push([o.data, o.pedidoItem, o.ordem, o.descricao, o.modelo, o.conjuntos, o.curta, o.longa, o.tubos]));
+
+    const aoa2 = [["Início (Enfornam.)", "Pedido/Item", "Ordem", "Descrição produto", "Modelo Sapata", "Sapata alternativa", "Conjuntos (x" + resultado.carruagens + ")", "Sapata CURTA", "Sapata LONGA", "Tubos"]];
+    resultado.porOrdem.forEach((o) => aoa2.push([o.data ? fmtDate(o.data) : "", o.pedidoItem, o.ordem, o.descricao, o.modelo, o.alternativa, o.conjuntos, o.curta, o.longa, o.tubos]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa2), "Resumo por ordem");
+
+    const aoa3 = [["Data necessidade", "Modelo", "Quantidade"]];
+    resultado.cronograma.forEach((c) => {
+      Object.keys(c.modelos).sort().forEach((mod) => aoa3.push([fmtDate(c.data), mod, c.modelos[mod]]));
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa3), "Cronograma reposição");
+
     XLSX.writeFile(wb, "analise_sapatas.xlsx");
   }
 
@@ -2103,7 +2251,7 @@ function SapatasAnalise({ itens }) {
       <h2 style={{ marginBottom: 6 }}>Análise de planejamento</h2>
       <p className="small muted" style={{ marginBottom: 16 }}>
         Anexe a planilha do cronograma (colunas "Descrição produto" e "Peças previstas para produção").
-        O diâmetro é o 1º trecho da descrição (até o 1º espaço). Cada conjunto = 2 sapatas LONGA + 3 CURTA.
+        O diâmetro é o 1º trecho da descrição. Cada conjunto = 2 sapatas LONGA + 3 CURTA.
       </p>
 
       {rendimentos.length === 0 && (
@@ -2115,14 +2263,32 @@ function SapatasAnalise({ itens }) {
 
       <label className="btn btn-primary" style={{ cursor: "pointer", display: "inline-block" }}>
         {processando ? "Processando…" : "Anexar planilha"}
-        <input type="file" accept=".xlsx,.xls" onChange={handleFile} disabled={processando || rendimentos.length === 0} style={{ display: "none" }} />
+        <input type="file" accept=".xlsx,.xls" onChange={onEscolherArquivo} disabled={processando || rendimentos.length === 0} style={{ display: "none" }} />
       </label>
+
+      {perguntarCarr && (
+        <Modal onClose={() => { setPerguntarCarr(false); setArquivoPendente(null); }}>
+          <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2>Quantas carruagens?</h2>
+            <p className="subtitle" style={{ marginTop: 8 }}>O número de conjuntos será multiplicado pela quantidade de carruagens.</p>
+            <div className="tag-row" style={{ marginTop: 8 }}>
+              {[1, 2, 3].map((n) => (
+                <button key={n} className={`tag-filter ${carruagens === n ? "active" : ""}`} onClick={() => setCarruagens(n)}>{n} carruagem{n > 1 ? "s" : ""}</button>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => { setPerguntarCarr(false); setArquivoPendente(null); }}>Cancelar</button>
+              <button className="btn btn-primary" onClick={processar}>Processar</button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {resultado && (
         <>
           <div className="flex-between" style={{ margin: "24px 0 12px" }}>
-            <h2>Sapatas necessárias</h2>
-            <button className="btn btn-secondary" onClick={exportar}>⤓ Exportar Excel</button>
+            <h2>Sapatas necessárias <span className="small muted" style={{ fontWeight: 400 }}>· {resultado.carruagens} carruagem(s)</span></h2>
+            <button className="btn btn-success" onClick={exportar}>⤓ Exportar Excel</button>
           </div>
           <div className="table-scroll">
             <table className="data-table sticky-head">
@@ -2144,10 +2310,47 @@ function SapatasAnalise({ itens }) {
             </table>
           </div>
 
+          <h2 style={{ margin: "24px 0 12px" }}>Cronograma de reposição <span className="small muted" style={{ fontWeight: 400 }}>· por data de necessidade</span></h2>
+          <div className="table-scroll">
+            <table className="data-table sticky-head">
+              <thead><tr><th>Data necessidade</th><th>Modelo</th><th>Quantidade</th></tr></thead>
+              <tbody>
+                {resultado.cronograma.map((c) => (
+                  Object.keys(c.modelos).sort().map((mod, i) => (
+                    <tr key={c.data + mod}>
+                      <td>{i === 0 ? fmtDate(c.data) : ""}</td>
+                      <td>{mod}</td>
+                      <td>{fmtNum(c.modelos[mod])}</td>
+                    </tr>
+                  ))
+                ))}
+                {resultado.cronograma.length === 0 && (
+                  <tr><td colSpan="3"><div className="empty-state">Sem datas de necessidade na planilha.</div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {resultado.cronograma.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <ChartBox
+                type="bar"
+                height={320}
+                data={cronogramaChartData(resultado.cronograma)}
+                options={{
+                  plugins: { legend: { position: "top", labels: { usePointStyle: true, boxWidth: 8, font: { family: "Inter", size: 10 } } } },
+                  scales: {
+                    x: { stacked: true, grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
+                    y: { stacked: true, grid: { color: "rgba(0,0,0,0.06)" }, beginAtZero: true, ticks: { font: { family: "Inter" } } },
+                  },
+                }}
+              />
+            </div>
+          )}
+
           <h2 style={{ margin: "24px 0 12px" }}>Resumo por ordem</h2>
           <div className="table-scroll tall">
             <table className="data-table sticky-head">
-              <thead><tr><th>Início (Enfornam.)</th><th>Pedido/Item</th><th>Ordem</th><th>Descrição produto</th><th>Modelo Sapata</th><th>Conjuntos</th><th>Sapata CURTA</th><th>Sapata LONGA</th><th>Tubos</th></tr></thead>
+              <thead><tr><th>Início (Enfornam.)</th><th>Pedido/Item</th><th>Ordem</th><th>Descrição produto</th><th>Modelo Sapata</th><th>Sapata alternativa</th><th>Conjuntos</th><th>Sapata CURTA</th><th>Sapata LONGA</th><th>Tubos</th></tr></thead>
               <tbody>
                 {resultado.porOrdem.map((o, idx) => (
                   <tr key={idx}>
@@ -2156,6 +2359,7 @@ function SapatasAnalise({ itens }) {
                     <td>{o.ordem || "—"}</td>
                     <td>{o.descricao}</td>
                     <td>{o.modelo}</td>
+                    <td>{o.alternativa}</td>
                     <td>{fmtNum(o.conjuntos)}</td>
                     <td>{fmtNum(o.curta)}</td>
                     <td>{fmtNum(o.longa)}</td>
@@ -2169,6 +2373,45 @@ function SapatasAnalise({ itens }) {
       )}
     </div>
   );
+}
+
+// Interpreta datas do plano: aceita Date, serial Excel, ou "DD/MM/AAAA hh:mm:ss" -> ISO yyyy-mm-dd
+function parseDataPlan(v) {
+  if (v == null || v === "") return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "number") {
+    // serial Excel (dias desde 1899-12-30)
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return isNaN(d) ? null : d.toISOString().slice(0, 10);
+  }
+  const s = String(v).trim().split(" ")[0]; // remove hora
+  let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return s;
+  return null;
+}
+
+// Monta dataset empilhado do cronograma (data x modelos)
+function cronogramaChartData(cronograma) {
+  const labels = cronograma.map((c) => {
+    const [y, mo, d] = c.data.split("-");
+    return `${d}/${mo}`;
+  });
+  const modelosSet = new Set();
+  cronograma.forEach((c) => Object.keys(c.modelos).forEach((m) => modelosSet.add(m)));
+  const modelos = Array.from(modelosSet).sort();
+  const palette = ["#0a4d8c", "#0071e3", "#3d8fdc", "#5aa9e6", "#7cbde8", "#9bcdef", "#2a6aa0", "#b6ddf5"];
+  return {
+    labels,
+    datasets: modelos.map((mod, idx) => ({
+      label: mod,
+      data: cronograma.map((c) => c.modelos[mod] || 0),
+      backgroundColor: palette[idx % palette.length],
+      borderRadius: 3,
+      maxBarThickness: 40,
+    })),
+  };
 }
 
 // ============================================================================
