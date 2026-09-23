@@ -335,8 +335,8 @@ h3 { font-size: 13px; font-weight: 600; }
 .btn-secondary { background: rgba(0,0,0,0.05); color: var(--text); }
 .btn-secondary:hover { background: rgba(0,0,0,0.08); }
 .btn-danger { background: var(--critical-bg); color: var(--critical); }
-.btn-success { background: #2e9e5b; color: #fff; }
-.btn-success:hover { background: #33ab63; }
+.btn-success { background: #d9efe1; color: #1e7a45; }
+.btn-success:hover { background: #cce9d6; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-full { width: 100%; }
 
@@ -485,6 +485,7 @@ table.data-table td, table.data-table th { font-size: 12px; }
 table.data-table th { font-size: 10px; }
 table.data-table tr:last-child td { border-bottom: none; }
 table.data-table tr.row-critical td { background: var(--critical-bg); }
+table.data-table tr.row-saldo-neg td { background: #fce4e2; }
 
 /* cabeçalho fixo com leve contraste azul */
 table.data-table.sticky-head thead th {
