@@ -622,7 +622,7 @@ function ReservaRecebimento({ user, itens }) {
           <table className="data-table sticky-head">
             <thead>
               <tr>
-                <th>Data Reserva</th><th>Reserva</th><th>Responsável</th><th>Código</th><th>Descrição</th><th>Quant.</th><th>Un.</th>
+                <th>Data Reserva</th><th>Reserva</th><th>Responsável</th><th>Código</th><th>Descrição</th><th>Valor unit.</th><th>Quant.</th><th>Un.</th><th>Custo total</th>
                 <th>C/C</th><th>Data da Entrega</th><th>Laudo</th><th>Qtd. Recebida</th><th>Pendência</th><th>Resp. Recebimento</th><th></th>
               </tr>
             </thead>
@@ -636,8 +636,10 @@ function ReservaRecebimento({ user, itens }) {
                   <td>{solicitante}</td>
                   <td>{m.codigo}</td>
                   <td>{(itens[m.codigo] || {}).descricao || "—"}</td>
+                  <td>{m.valor_unitario != null ? fmtBRL(m.valor_unitario) : "—"}</td>
                   <td>{fmtNum(m.quantidade)}</td>
                   <td>{m.unidade || (itens[m.codigo] || {}).unidade || "—"}</td>
+                  <td>{m.valor_unitario != null ? fmtBRL(Number(m.valor_unitario) * Number(m.quantidade || 0)) : "—"}</td>
                   <td>{m.centro_custo || "—"}</td>
                   <td>{m.data_entrega ? fmtDate(m.data_entrega) : "—"}</td>
                   <td>
@@ -658,7 +660,7 @@ function ReservaRecebimento({ user, itens }) {
                 </tr>
               );})}
               {!loading && filtrado.length === 0 && (
-                <tr><td colSpan="14"><div className="empty-state">Nenhuma reserva encontrada.</div></td></tr>
+                <tr><td colSpan="16"><div className="empty-state">Nenhuma reserva encontrada.</div></td></tr>
               )}
             </tbody>
           </table>
@@ -803,10 +805,13 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
     if (!cc.trim()) { setErro("O centro de custo é obrigatório."); return; }
     if (!numeroReserva.trim()) { setErro("O número da reserva é obrigatório."); return; }
     setSalvando(true);
+    const itemInfo = itens[codigo.trim()] || {};
     const { error } = await sb.from("movimentos_estoque").insert({
       tipo: "reserva",
       codigo: codigo.trim(),
       quantidade: Number(quantidade),
+      unidade: itemInfo.unidade || null,
+      valor_unitario: itemInfo.preco != null ? Number(itemInfo.preco) : null,
       centro_custo: cc.trim(),
       numero_reserva: numeroReserva.trim(),
       usuario_pn: user.pn,
@@ -3165,7 +3170,7 @@ function App() {
   const [itensLoaded, setItensLoaded] = useState(false);
 
   const carregarItens = useCallback(async () => {
-    const { data } = await sb.from("itens").select("codigo, descricao, unidade, estoque_minimo").eq("ativo", true);
+    const { data } = await sb.from("itens").select("codigo, descricao, unidade, estoque_minimo, preco").eq("ativo", true);
     const map = {};
     (data || []).forEach((i) => { map[i.codigo] = i; });
     setItens(map);
