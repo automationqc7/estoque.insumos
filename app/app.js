@@ -265,6 +265,8 @@ function Dashboard({ user, onNavigate }) {
   const [estoque, setEstoque] = useState([]);
   const [loading, setLoading] = useState(true);
   const [budgetData, setBudgetData] = useState([]);
+  const [recebidoMes, setRecebidoMes] = useState(0);
+  const [consumidoMes, setConsumidoMes] = useState(0);
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
   const budgetChartRef = useRef(null);
@@ -283,14 +285,20 @@ function Dashboard({ user, onNavigate }) {
     const ini = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString().slice(0, 10);
     const fim = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).toISOString().slice(0, 10);
 
-    const [{ data: ccs }, { data: reservas }, { data: precos }] = await Promise.all([
+    const [{ data: ccs }, { data: reservas }, { data: precos }, { data: movMes }] = await Promise.all([
       sb.from("centros_custo").select("numero, descricao, budget"),
       sb.from("movimentos_estoque")
-        .select("codigo, quantidade, centro_custo, data_movimento")
+        .select("codigo, quantidade, centro_custo, data_movimento, correcao")
         .eq("tipo", "reserva")
         .gte("data_movimento", ini)
         .lte("data_movimento", fim + "T23:59:59"),
       sb.from("itens").select("codigo, preco"),
+      // recebido e consumido do MÊS corrente (para os cards)
+      sb.from("movimentos_estoque")
+        .select("tipo, quantidade, correcao, data_movimento")
+        .in("tipo", ["recebimento", "saida"])
+        .gte("data_movimento", ini)
+        .lte("data_movimento", fim + "T23:59:59"),
     ]);
 
     const precoMap = {};
@@ -298,9 +306,19 @@ function Dashboard({ user, onNavigate }) {
 
     const realizado = {};
     (reservas || []).forEach((r) => {
+      if (r.correcao) return; // correção de estoque não entra no custo de reserva
       const cc = r.centro_custo || "—";
       realizado[cc] = (realizado[cc] || 0) + Number(r.quantidade || 0) * (precoMap[r.codigo] || 0);
     });
+
+    // Totais do mês para os cards (consumo ignora correções de estoque)
+    let recMes = 0, consMes = 0;
+    (movMes || []).forEach((m) => {
+      if (m.tipo === "recebimento") recMes += Number(m.quantidade || 0);
+      else if (m.tipo === "saida" && !m.correcao) consMes += Number(m.quantidade || 0);
+    });
+    setRecebidoMes(recMes);
+    setConsumidoMes(consMes);
 
     const linhas = (ccs || [])
       .filter((c) => Number(c.budget || 0) > 0 || realizado[c.numero])
@@ -519,12 +537,12 @@ function Dashboard({ user, onNavigate }) {
           <div className="value">{fmtBRL(valorEstoque)}</div>
         </div>
         <div className="card stat-card">
-          <div className="label">Total recebido</div>
-          <div className="value">{fmtNum(totalRecebido)}</div>
+          <div className="label">Total recebido (MÊS)</div>
+          <div className="value">{fmtNum(recebidoMes)}</div>
         </div>
         <div className="card stat-card">
-          <div className="label">Total consumido</div>
-          <div className="value">{fmtNum(totalConsumido)}</div>
+          <div className="label">Total consumido (MÊS)</div>
+          <div className="value">{fmtNum(consumidoMes)}</div>
         </div>
       </div>
 
@@ -790,6 +808,7 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
   const [quantidade, setQuantidade] = useState("");
   const [cc, setCc] = useState("");
   const [numeroReserva, setNumeroReserva] = useState("");
+  const [correcao, setCorrecao] = useState(false);
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -802,21 +821,41 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
     if (!codigo.trim()) { setErro("Informe o código do produto."); return; }
     if (!codigoValido) { setErro("Código não encontrado no cadastro de produtos."); return; }
     if (!quantidade) { setErro("Informe a quantidade."); return; }
-    if (!cc.trim()) { setErro("O centro de custo é obrigatório."); return; }
-    if (!numeroReserva.trim()) { setErro("O número da reserva é obrigatório."); return; }
+    if (!correcao && !cc.trim()) { setErro("O centro de custo é obrigatório."); return; }
+    if (!correcao && !numeroReserva.trim()) { setErro("O número da reserva é obrigatório."); return; }
     setSalvando(true);
     const itemInfo = itens[codigo.trim()] || {};
-    const { error } = await sb.from("movimentos_estoque").insert({
-      tipo: "reserva",
-      codigo: codigo.trim(),
-      quantidade: Number(quantidade),
-      unidade: itemInfo.unidade || null,
-      valor_unitario: itemInfo.preco != null ? Number(itemInfo.preco) : null,
-      centro_custo: cc.trim(),
-      numero_reserva: numeroReserva.trim(),
-      usuario_pn: user.pn,
-      observacoes: `Solicitado por ${user.nome}`,
-    });
+    const qtd = Number(quantidade);
+    // Lançamento normal de reserva OU correção de estoque (soma direto ao estoque,
+    // sem centro de custo e sem precisar "Receber").
+    const registro = correcao
+      ? {
+          tipo: "reserva",
+          codigo: codigo.trim(),
+          quantidade: qtd,
+          unidade: itemInfo.unidade || null,
+          valor_unitario: itemInfo.preco != null ? Number(itemInfo.preco) : null,
+          centro_custo: null,
+          numero_reserva: "Correção de estoque",
+          correcao: true,
+          motivo: "Correção Estoque",
+          quantidade_recebida: qtd,
+          pendencia: 0,
+          usuario_pn: user.pn,
+          observacoes: `Correção de estoque por ${user.nome}`,
+        }
+      : {
+          tipo: "reserva",
+          codigo: codigo.trim(),
+          quantidade: qtd,
+          unidade: itemInfo.unidade || null,
+          valor_unitario: itemInfo.preco != null ? Number(itemInfo.preco) : null,
+          centro_custo: cc.trim(),
+          numero_reserva: numeroReserva.trim(),
+          usuario_pn: user.pn,
+          observacoes: `Solicitado por ${user.nome}`,
+        };
+    const { error } = await sb.from("movimentos_estoque").insert(registro);
     setSalvando(false);
     if (error) { setErro("Não foi possível salvar. Tente novamente."); return; }
     onSaved();
@@ -829,6 +868,10 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
         <div className="subtitle">Registrada por {user.nome}</div>
         {erro && <div className="login-error">{erro}</div>}
         <form onSubmit={handleSubmit}>
+          <label className="check-row" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer" }}>
+            <input type="checkbox" checked={correcao} onChange={(e) => setCorrecao(e.target.checked)} style={{ width: "auto", margin: 0 }} />
+            <span>Correção de Estoque</span>
+          </label>
           <div className="field">
             <label>Código</label>
             <input
@@ -856,12 +899,25 @@ function NovaReservaModal({ user, itens, onClose, onSaved }) {
             </div>
             <div className="field">
               <label>Centro de custo</label>
-              <input type="text" value={cc} onChange={(e) => setCc(e.target.value)} />
+              <input
+                type="text"
+                value={correcao ? "" : cc}
+                onChange={(e) => setCc(e.target.value)}
+                disabled={correcao}
+                placeholder={correcao ? "— não se aplica —" : ""}
+                style={correcao ? { background: "rgba(0,0,0,0.03)" } : undefined}
+              />
             </div>
           </div>
           <div className="field">
             <label>Nº da reserva</label>
-            <input type="text" value={numeroReserva} onChange={(e) => setNumeroReserva(e.target.value)} />
+            <input
+              type="text"
+              value={correcao ? "Correção de estoque" : numeroReserva}
+              onChange={(e) => setNumeroReserva(e.target.value)}
+              disabled={correcao}
+              style={correcao ? { background: "rgba(0,0,0,0.03)" } : undefined}
+            />
           </div>
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
@@ -1052,11 +1108,13 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
+  const ehCorrecao = motivo === "Correção Estoque";
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!codigo) { setErro("Busque e selecione o item."); return; }
     if (!quantidade) { setErro("Informe a quantidade."); return; }
-    if (!local) { setErro("Selecione o local de destino."); return; }
+    if (!ehCorrecao && !local) { setErro("Selecione o local de destino."); return; }
     setSalvando(true);
     const { error } = await sb.from("movimentos_estoque").insert({
       tipo: "saida",
@@ -1064,8 +1122,9 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
       quantidade: Number(quantidade),
       unidade: (itens[codigo] || {}).unidade || null,
       turno,
-      local_destino: local,
+      local_destino: ehCorrecao ? null : local,
       motivo,
+      correcao: ehCorrecao,
       usuario_pn: user.pn,
     });
     setSalvando(false);
@@ -1101,8 +1160,8 @@ function NovaSaidaModal({ user, itens, onClose, onSaved }) {
           <div className="form-row">
             <div className="field">
               <label>Local de destino</label>
-              <select value={local} onChange={(e) => setLocal(e.target.value)}>
-                <option value="">Selecione…</option>
+              <select value={ehCorrecao ? "" : local} onChange={(e) => setLocal(e.target.value)} disabled={ehCorrecao} style={ehCorrecao ? { background: "rgba(0,0,0,0.03)" } : undefined}>
+                <option value="">{ehCorrecao ? "— não se aplica —" : "Selecione…"}</option>
                 {LOCAIS_DESTINO.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
@@ -1378,7 +1437,7 @@ function DashboardAnalytics({ itens }) {
     // reservas e saídas, agora com centro_custo
     const { data } = await sb
       .from("movimentos_estoque")
-      .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo")
+      .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao")
       .in("tipo", ["reserva", "saida"])
       .order("data_movimento", { ascending: true })
       .limit(20000);
@@ -1427,7 +1486,7 @@ function DashboardAnalytics({ itens }) {
   // 1) reservas por mês
   const reservasPorMes = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "reserva").forEach((m) => {
+    filtrado.filter((m) => m.tipo === "reserva" && !m.correcao).forEach((m) => {
       if (!m.data_movimento) return;
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
@@ -1438,7 +1497,7 @@ function DashboardAnalytics({ itens }) {
   // 2) saídas por mês
   const saidasPorMes = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "saida").forEach((m) => {
+    filtrado.filter((m) => m.tipo === "saida" && !m.correcao).forEach((m) => {
       if (!m.data_movimento) return;
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
@@ -1448,7 +1507,7 @@ function DashboardAnalytics({ itens }) {
 
   // 3) consumo por área (local) por mês -> dataset empilhado
   const consumoAreaMes = useMemo(() => {
-    const saidas = filtrado.filter((m) => m.tipo === "saida" && m.data_movimento);
+    const saidas = filtrado.filter((m) => m.tipo === "saida" && !m.correcao && m.data_movimento);
     const meses = Array.from(new Set(saidas.map((m) => m.data_movimento.slice(0, 7)))).sort();
     const areas = Array.from(new Set(saidas.map((m) => m.local_destino || "—")));
     const matriz = {}; // area -> {mes: total}
@@ -1464,7 +1523,7 @@ function DashboardAnalytics({ itens }) {
   // 4) itens mais consumidos
   const itensMaisConsumidos = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "saida").forEach((m) => {
+    filtrado.filter((m) => m.tipo === "saida" && !m.correcao).forEach((m) => {
       map[m.codigo] = (map[m.codigo] || 0) + Number(m.quantidade || 0);
     });
     return Object.keys(map)
@@ -1486,7 +1545,7 @@ function DashboardAnalytics({ itens }) {
   // 6) valor adquirido (reserva) por mês, por centro de custo — empilhado
   //    valor = preço unitário atual × quantidade reservada
   const valorCCporMes = useMemo(() => {
-    const reservas = filtrado.filter((m) => m.tipo === "reserva" && m.data_movimento);
+    const reservas = filtrado.filter((m) => m.tipo === "reserva" && !m.correcao && m.data_movimento);
     const meses = Array.from(new Set(reservas.map((m) => m.data_movimento.slice(0, 7)))).sort();
     const ccs = Array.from(new Set(reservas.map((m) => m.centro_custo || "—")));
     const matriz = {};
@@ -1505,7 +1564,7 @@ function DashboardAnalytics({ itens }) {
   // 7) itens adquiridos (reserva), do maior para o menor — por valor
   const itensAdquiridos = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "reserva").forEach((m) => {
+    filtrado.filter((m) => m.tipo === "reserva" && !m.correcao).forEach((m) => {
       const valor = Number(m.quantidade || 0) * (precos[m.codigo] || 0);
       map[m.codigo] = (map[m.codigo] || 0) + valor;
     });
@@ -1900,7 +1959,12 @@ function SapatasUS({ user, itens }) {
         <button className={`tag-filter ${aba === "analise" ? "active" : ""}`} onClick={() => setAba("analise")}>Análise de planejamento</button>
       </div>
 
-      {aba === "producao" && <SapatasProducao user={user} itens={itens} />}
+      {aba === "producao" && (
+        <>
+          <SapatasProducao user={user} itens={itens} />
+          <SapatasMontagem user={user} />
+        </>
+      )}
       {aba === "rendimento" && <SapatasRendimento />}
       {aba === "analise" && <SapatasAnalise itens={itens} />}
     </div>
@@ -1931,7 +1995,7 @@ function SapatasProducao({ user, itens }) {
   return (
     <div className="card section">
       <div className="flex-between" style={{ marginBottom: 14 }}>
-        <h2>Sapatas para Ultrassom</h2>
+        <h2>Produção de sapatas para Ultrassom</h2>
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Registrar produção</button>
       </div>
       <div className="table-scroll">
@@ -2025,6 +2089,160 @@ function SapatasProducaoModal({ user, itens, onClose, onSaved }) {
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
             <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Registrar"}</button>
+          </div>
+        </form>
+      </div>
+    </Modal>
+  );
+}
+
+// ---- MONTAGEM DE SAPATAS (etapa entre produção e estoque) ----
+// Mostra, por código, o total produzido e quanto ainda está pendente de
+// montagem. Só o que for montado entra no estoque. Linhas com pendente = 0
+// não aparecem. Abaixo, o histórico de montagens registradas.
+function SapatasMontagem({ user }) {
+  const [lista, setLista] = useState([]);       // vw_sapatas_montagem (pendente > 0)
+  const [hist, setHist] = useState([]);         // sapatas_montagem (histórico)
+  const [nomesPorPn, setNomesPorPn] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [montando, setMontando] = useState(null); // linha selecionada p/ montar
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    const { data } = await sb.from("vw_sapatas_montagem").select("*").order("codigo");
+    setLista((data || []).filter((r) => Number(r.pendente_montagem) > 0));
+    const { data: h } = await sb.from("sapatas_montagem").select("*").order("data_montagem", { ascending: false }).limit(300);
+    setHist(h || []);
+    const pns = Array.from(new Set((h || []).map((m) => m.usuario_pn).filter(Boolean)));
+    if (pns.length) {
+      const { data: us } = await sb.from("usuarios").select("pn, nome").in("pn", pns);
+      const map = {}; (us || []).forEach((u) => { map[u.pn] = u.nome; });
+      setNomesPorPn(map);
+    }
+    setLoading(false);
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const descPorCodigo = useMemo(() => {
+    const m = {}; lista.forEach((r) => { m[r.codigo] = r.descricao; });
+    hist.forEach((h) => { if (!m[h.codigo]) m[h.codigo] = m[h.codigo] || ""; });
+    return m;
+  }, [lista, hist]);
+
+  return (
+    <>
+      <div className="card section" style={{ marginTop: 20 }}>
+        <h2 style={{ marginBottom: 6 }}>Montagem de sapatas</h2>
+        <p className="small muted" style={{ marginTop: 0, marginBottom: 14 }}>
+          Total produzido por código e quanto ainda falta montar. Só o que for montado entra no estoque.
+        </p>
+        <div className="table-scroll">
+          <table className="data-table sticky-head">
+            <thead>
+              <tr><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Pendente Montagem</th><th>Montagem</th></tr>
+            </thead>
+            <tbody>
+              {lista.map((r) => (
+                <tr key={r.codigo}>
+                  <td>{r.codigo}</td>
+                  <td>{r.descricao || "—"}</td>
+                  <td>{fmtNum(r.total_produzido)}</td>
+                  <td><strong>{fmtNum(r.pendente_montagem)}</strong></td>
+                  <td>
+                    <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12.5 }} onClick={() => setMontando(r)}>
+                      Montagem
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!loading && lista.length === 0 && (
+                <tr><td colSpan="5"><div className="empty-state">Nenhuma sapata pendente de montagem.</div></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card section" style={{ marginTop: 20 }}>
+        <h2 style={{ marginBottom: 14 }}>Histórico de montagem</h2>
+        <div className="table-scroll">
+          <table className="data-table sticky-head">
+            <thead>
+              <tr><th>Data</th><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Usuário</th></tr>
+            </thead>
+            <tbody>
+              {hist.map((m) => (
+                <tr key={m.id}>
+                  <td>{fmtDate(m.data_montagem)}</td>
+                  <td>{m.codigo}</td>
+                  <td>{descPorCodigo[m.codigo] || "—"}</td>
+                  <td>{fmtNum(m.quantidade)}</td>
+                  <td>{m.usuario_pn ? (nomesPorPn[m.usuario_pn] || m.usuario_pn) : "—"}</td>
+                </tr>
+              ))}
+              {!loading && hist.length === 0 && (
+                <tr><td colSpan="5"><div className="empty-state">Nenhuma montagem registrada ainda.</div></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {montando && (
+        <MontagemModal
+          user={user}
+          linha={montando}
+          onClose={() => setMontando(null)}
+          onSaved={() => { setMontando(null); carregar(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function MontagemModal({ user, linha, onClose, onSaved }) {
+  const pendente = Number(linha.pendente_montagem) || 0;
+  const [quantidade, setQuantidade] = useState("");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const qtd = Number(quantidade);
+    if (!qtd || qtd <= 0) { setErro("Informe a quantidade montada."); return; }
+    if (qtd > pendente) { setErro(`Só há ${fmtNum(pendente)} pendente(s) de montagem.`); return; }
+    setSalvando(true);
+    const { data, error } = await sb.rpc("registrar_montagem", {
+      p_codigo: linha.codigo,
+      p_quantidade: qtd,
+      p_usuario_pn: user.pn,
+    });
+    setSalvando(false);
+    if (error) { setErro("Não foi possível registrar a montagem."); return; }
+    if (data === false) { setErro("Quantidade inválida ou maior que o pendente."); return; }
+    onSaved();
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Registrar montagem</h2>
+        <div className="subtitle">
+          {linha.codigo} · {linha.descricao || "—"} · pendente {fmtNum(pendente)}
+        </div>
+        {erro && <div className="login-error">{erro}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Quantidade montada</label>
+            <input type="number" min="0" step="any" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} autoFocus />
+          </div>
+          <div className="field">
+            <label>Responsável</label>
+            <input type="text" value={user.nome} readOnly style={{ background: "rgba(0,0,0,0.03)" }} />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" disabled={salvando}>{salvando ? "Salvando…" : "Confirmar montagem"}</button>
           </div>
         </form>
       </div>
