@@ -1594,38 +1594,46 @@ function DashboardAnalytics({ itens }) {
     },
   };
 
+  // Produção que aparece na aba Produção e nos gráficos: considera os
+  // lançamentos de produção de sapatas (independe da montagem), MAS ignora o
+  // registro-base da montagem (turno "Ajuste"), que só existe para manter o
+  // "Pendente Montagem" e não deve contar como produção.
+  const sapProdReal = useMemo(
+    () => sapProd.filter((p) => p.turno !== "Ajuste"),
+    [sapProd]
+  );
+
   // --- Sapatas: produção mensal ---
-  // Considera os lançamentos de produção de sapatas (independe da montagem).
   const sapProdMensal = useMemo(() => {
     const map = {};
-    sapProd.forEach((p) => {
+    sapProdReal.forEach((p) => {
       if (!p.data_producao) return;
       const ym = String(p.data_producao).slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(p.quantidade || 0);
     });
     return Object.keys(map).sort().map((k) => ({ mes: k, valor: map[k] }));
-  }, [sapProd]);
+  }, [sapProdReal]);
 
   // Meses com produção disponíveis para seleção (mais recente primeiro),
   // sempre incluindo o mês atual.
   const mesesProdDisp = useMemo(() => {
-    const set = new Set(sapProd.map((p) => String(p.data_producao || "").slice(0, 7)).filter(Boolean));
+    const set = new Set(sapProdReal.map((p) => String(p.data_producao || "").slice(0, 7)).filter(Boolean));
     const a = new Date();
     set.add(`${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, "0")}`);
     return Array.from(set).sort().reverse();
-  }, [sapProd]);
+  }, [sapProdReal]);
 
   // --- Sapatas: produção diária do mês selecionado (com filtro de turno) ---
   const sapProdDiaria = useMemo(() => {
     const map = {};
-    sapProd.forEach((p) => {
+    sapProdReal.forEach((p) => {
       if (!p.data_producao || String(p.data_producao).slice(0, 7) !== mesSel) return;
       if (turnoSel !== "todos" && p.turno !== turnoSel) return;
       const dia = String(p.data_producao).slice(8, 10);
       map[dia] = (map[dia] || 0) + Number(p.quantidade || 0);
     });
     return Object.keys(map).sort().map((k) => ({ dia: k, valor: map[k] }));
-  }, [sapProd, turnoSel, mesSel]);
+  }, [sapProdReal, turnoSel, mesSel]);
 
   // --- Sapatas: estoque por modelo (treemap) ---
   const sapEstoqueTree = useMemo(() => {
@@ -1636,8 +1644,8 @@ function DashboardAnalytics({ itens }) {
   }, [sapEstoque]);
 
   const turnosDisp = useMemo(() => {
-    return Array.from(new Set(sapProd.map((p) => p.turno).filter(Boolean))).sort();
-  }, [sapProd]);
+    return Array.from(new Set(sapProdReal.map((p) => p.turno).filter(Boolean))).sort();
+  }, [sapProdReal]);
 
   const codigosDisponiveis = useMemo(
     () => Object.values(itens).sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "")),
@@ -2005,8 +2013,11 @@ function SapatasProducao({ user, itens }) {
   const carregar = useCallback(async () => {
     setLoading(true);
     const { data } = await sb.from("sapatas_producao").select("*").order("data_producao", { ascending: false }).limit(300);
-    setLista(data || []);
-    const pns = Array.from(new Set((data || []).map((m) => m.usuario_pn).filter(Boolean)));
+    // Esconde o registro-base da montagem (turno "Ajuste"): ele existe só para
+    // manter o "Pendente Montagem" e não deve aparecer como produção.
+    const reais = (data || []).filter((m) => m.turno !== "Ajuste");
+    setLista(reais);
+    const pns = Array.from(new Set(reais.map((m) => m.usuario_pn).filter(Boolean)));
     if (pns.length) {
       const { data: us } = await sb.from("usuarios").select("pn, nome").in("pn", pns);
       const map = {}; (us || []).forEach((u) => { map[u.pn] = u.nome; });
