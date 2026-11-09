@@ -1362,10 +1362,32 @@ function TreemapBox({ dados, height = 340 }) {
 }
 
 // Um movimento é "correção de estoque" (entrada ou saída) quando está marcado
-// na coluna correcao OU quando o motivo é "Correção Estoque". Esses lançamentos
-// não entram em nenhum gráfico do Dashboard.
+// na coluna correcao, OU quando o motivo/local for "Correção Estoque". Esses
+// lançamentos não entram em nenhum gráfico do Dashboard.
 function ehCorrecaoMov(m) {
-  return m.correcao === true || m.motivo === "Correção Estoque";
+  return m.correcao === true
+    || m.motivo === "Correção Estoque"
+    || m.local_destino === "Correção Estoque";
+}
+
+// Gera a sequência contínua de meses ("YYYY-MM") do primeiro mês com dado até
+// fimYM (inclusive), preenchendo os meses vazios. Serve para que os gráficos
+// continuem até o mês atual e cada novo mês apareça automaticamente.
+function mesesContinuos(keys, fimYM) {
+  const ks = (keys || []).filter(Boolean).sort();
+  if (ks.length === 0) return [];
+  let fim = fimYM;
+  if (!fim || fim < ks[ks.length - 1]) fim = ks[ks.length - 1];
+  const out = [];
+  let [y, m] = ks[0].split("-").map(Number);
+  const [fy, fm] = fim.split("-").map(Number);
+  let guard = 0;
+  while ((y < fy || (y === fy && m <= fm)) && guard < 600) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++; if (m > 12) { m = 1; y++; }
+    guard++;
+  }
+  return out;
 }
 
 // Converte "YYYY-MM" -> "mmm/yy" para rótulos mais curtos
@@ -1485,6 +1507,14 @@ function DashboardAnalytics({ itens }) {
 
   const temFiltro = fLocal || fCodigo || fCentros.length > 0 || fDataIni || fDataFim;
 
+  // Mês final dos gráficos: o mês atual (ou a data final do filtro, se houver).
+  // Faz os gráficos mensais avançarem automaticamente a cada novo mês.
+  const mesFim = useMemo(() => {
+    if (fDataFim) return fDataFim.slice(0, 7);
+    const a = new Date();
+    return `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, "0")}`;
+  }, [fDataFim]);
+
   // descrição do centro de custo por número
   const ccDesc = useMemo(() => {
     const m = {};
@@ -1502,8 +1532,8 @@ function DashboardAnalytics({ itens }) {
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
     });
-    return Object.keys(map).sort().map((k) => ({ mes: k, valor: map[k] }));
-  }, [filtrado]);
+    return mesesContinuos(Object.keys(map), mesFim).map((k) => ({ mes: k, valor: map[k] || 0 }));
+  }, [filtrado, mesFim]);
 
   // 2) saídas por mês
   const saidasPorMes = useMemo(() => {
@@ -1513,13 +1543,13 @@ function DashboardAnalytics({ itens }) {
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
     });
-    return Object.keys(map).sort().map((k) => ({ mes: k, valor: map[k] }));
-  }, [filtrado]);
+    return mesesContinuos(Object.keys(map), mesFim).map((k) => ({ mes: k, valor: map[k] || 0 }));
+  }, [filtrado, mesFim]);
 
   // 3) consumo por área (local) por mês -> dataset empilhado
   const consumoAreaMes = useMemo(() => {
     const saidas = filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m) && m.data_movimento);
-    const meses = Array.from(new Set(saidas.map((m) => m.data_movimento.slice(0, 7)))).sort();
+    const meses = mesesContinuos(Array.from(new Set(saidas.map((m) => m.data_movimento.slice(0, 7)))), mesFim);
     const areas = Array.from(new Set(saidas.map((m) => m.local_destino || "—")));
     const matriz = {}; // area -> {mes: total}
     areas.forEach((a) => { matriz[a] = {}; });
@@ -1529,7 +1559,7 @@ function DashboardAnalytics({ itens }) {
       matriz[a][ym] = (matriz[a][ym] || 0) + Number(m.quantidade || 0);
     });
     return { meses, areas, matriz };
-  }, [filtrado]);
+  }, [filtrado, mesFim]);
 
   // 4) itens mais consumidos
   const itensMaisConsumidos = useMemo(() => {
@@ -1557,7 +1587,7 @@ function DashboardAnalytics({ itens }) {
   //    valor = preço unitário atual × quantidade reservada
   const valorCCporMes = useMemo(() => {
     const reservas = filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m) && m.data_movimento);
-    const meses = Array.from(new Set(reservas.map((m) => m.data_movimento.slice(0, 7)))).sort();
+    const meses = mesesContinuos(Array.from(new Set(reservas.map((m) => m.data_movimento.slice(0, 7)))), mesFim);
     const ccs = Array.from(new Set(reservas.map((m) => m.centro_custo || "—")));
     const matriz = {};
     ccs.forEach((c) => { matriz[c] = {}; });
@@ -1570,7 +1600,7 @@ function DashboardAnalytics({ itens }) {
     // rótulo do CC: "número – descrição"
     const rotulos = ccs.map((c) => (c === "—" ? "Sem centro de custo" : `${c}${ccDesc[c] && ccDesc[c] !== c ? " – " + ccDesc[c] : ""}`));
     return { meses, ccs, rotulos, matriz };
-  }, [filtrado, precos, ccDesc]);
+  }, [filtrado, precos, ccDesc, mesFim]);
 
   // 7) itens adquiridos (reserva), do maior para o menor — por valor
   const itensAdquiridos = useMemo(() => {
@@ -1611,8 +1641,8 @@ function DashboardAnalytics({ itens }) {
       const ym = String(p.data_producao).slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(p.quantidade || 0);
     });
-    return Object.keys(map).sort().map((k) => ({ mes: k, valor: map[k] }));
-  }, [sapProdReal]);
+    return mesesContinuos(Object.keys(map), mesFim).map((k) => ({ mes: k, valor: map[k] || 0 }));
+  }, [sapProdReal, mesFim]);
 
   // Meses com produção disponíveis para seleção (mais recente primeiro),
   // sempre incluindo o mês atual.
@@ -1635,13 +1665,16 @@ function DashboardAnalytics({ itens }) {
     return Object.keys(map).sort().map((k) => ({ dia: k, valor: map[k] }));
   }, [sapProdReal, turnoSel, mesSel]);
 
-  // --- Sapatas: estoque por modelo (treemap) ---
+  // --- Sapatas: disponíveis em estoque ---
+  // Usa o ESTOQUE REAL (estoque_atual da vw_estoque_atual, mesma coluna da aba
+  // Estoque), considerando apenas os códigos de sapata (número + letra, ex.:
+  // 219C) com saldo maior que zero. Não usa mais a quantidade produzida.
   const sapEstoqueTree = useMemo(() => {
-    return sapEstoque
-      .filter((e) => Number(e.total_produzido) > 0)
-      .map((e) => ({ nome: (e.descricao || e.codigo).slice(0, 24), codigo: e.codigo, valor: Number(e.total_produzido) }))
+    return estoque
+      .filter((e) => parseSapata(e.codigo) && Number(e.estoque_atual) > 0)
+      .map((e) => ({ nome: (e.descricao || e.codigo).slice(0, 24), codigo: e.codigo, valor: Number(e.estoque_atual) }))
       .sort((a, b) => b.valor - a.valor);
-  }, [sapEstoque]);
+  }, [estoque]);
 
   const turnosDisp = useMemo(() => {
     return Array.from(new Set(sapProdReal.map((p) => p.turno).filter(Boolean))).sort();
