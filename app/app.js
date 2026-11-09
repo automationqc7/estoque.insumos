@@ -1479,10 +1479,12 @@ function DashboardAnalytics({ itens }) {
       .from("movimentos_estoque")
       .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao, motivo")
       .in("tipo", ["reserva", "saida"])
-      // mais recentes primeiro: se algum dia o total passar do limite, os meses
-      // recentes continuam aparecendo (os mais antigos é que seriam cortados).
+      // Só o período exibido no dashboard (jan/2026 em diante). Reduz muito o
+      // volume e evita que o limite corte os meses mais recentes. Ordena do mais
+      // recente para o mais antigo por segurança.
+      .gte("data_movimento", MES_INICIO_DASH + "-01")
       .order("data_movimento", { ascending: false })
-      .limit(20000);
+      .limit(50000);
     setMovs(data || []);
     const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual, preco").order("estoque_atual", { ascending: false });
     setEstoque(est || []);
