@@ -47,6 +47,44 @@ function fmtDate(d) {
   }
 }
 
+// Primeiro dia do ano vigente (ex.: "2026-01-01"), usado como filtro padrão.
+function inicioAnoVigente() {
+  return `${new Date().getFullYear()}-01-01`;
+}
+
+// Teto de segurança de registros carregados de uma vez (≈ MAX_PAGINAS mil).
+// Evita puxar um volume enorme para o navegador; se for atingido, avisamos.
+const PAGINA_SIZE = 1000;
+const MAX_PAGINAS = 50;
+
+// Busca movimentos de um tipo em páginas de 1000 (o Supabase limita ~1000 por
+// consulta), trazendo os registros até o teto de segurança. Se gteDate for
+// informado, traz só a partir dessa data; senão, o histórico completo.
+// Retorna { dados, truncado } — truncado = true quando há mais dados do que o
+// teto permitiu exibir.
+async function carregarMovimentosPaginado(tipo, gteDate) {
+  let desde = 0;
+  let todos = [];
+  let truncado = false;
+  let paginas = 0;
+  while (true) {
+    let q = sb
+      .from("movimentos_estoque")
+      .select("*")
+      .eq("tipo", tipo)
+      .order("data_movimento", { ascending: false });
+    if (gteDate) q = q.gte("data_movimento", gteDate);
+    const { data, error } = await q.range(desde, desde + PAGINA_SIZE - 1);
+    if (error || !data) break;
+    todos = todos.concat(data);
+    paginas++;
+    if (data.length < PAGINA_SIZE) break;
+    if (paginas >= MAX_PAGINAS) { truncado = true; break; }
+    desde += PAGINA_SIZE;
+  }
+  return { dados: todos, truncado };
+}
+
 // ============================================================================
 // LOGIN
 // ============================================================================
@@ -306,7 +344,7 @@ function Dashboard({ user, onNavigate }) {
 
     const realizado = {};
     (reservas || []).forEach((r) => {
-      if (ehCorrecaoMov(r)) return; // correção de estoque não entra no custo de reserva
+      if (!entraNoGrafico(r)) return; // ignora correção e quantidades negativas
       const cc = r.centro_custo || "—";
       realizado[cc] = (realizado[cc] || 0) + Number(r.quantidade || 0) * (precoMap[r.codigo] || 0);
     });
@@ -315,7 +353,7 @@ function Dashboard({ user, onNavigate }) {
     let recMes = 0, consMes = 0;
     (movMes || []).forEach((m) => {
       if (m.tipo === "recebimento") recMes += Number(m.quantidade || 0);
-      else if (m.tipo === "saida" && !ehCorrecaoMov(m)) consMes += Number(m.quantidade || 0);
+      else if (m.tipo === "saida" && entraNoGrafico(m)) consMes += Number(m.quantidade || 0);
     });
     setRecebidoMes(recMes);
     setConsumidoMes(consMes);
@@ -581,18 +619,16 @@ function ReservaRecebimento({ user, itens }) {
   const [recebendo, setRecebendo] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtroPend, setFiltroPend] = useState("todas");
+  const [verTudo, setVerTudo] = useState(false); // false = só o ano vigente
+  const [truncado, setTruncado] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const { data } = await sb
-      .from("movimentos_estoque")
-      .select("*")
-      .eq("tipo", "reserva")
-      .order("data_movimento", { ascending: false })
-      .limit(200);
-    setLista(data || []);
+    const { dados, truncado } = await carregarMovimentosPaginado("reserva", verTudo ? null : inicioAnoVigente());
+    setLista(dados);
+    setTruncado(truncado);
     setLoading(false);
-  }, []);
+  }, [verTudo]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -621,11 +657,24 @@ function ReservaRecebimento({ user, itens }) {
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Nova reserva</button>
       </div>
 
+      {truncado && (
+        <div className="alert-banner" style={{ marginBottom: 16 }}>
+          <span className="icon">ℹ️</span>
+          <div>
+            <strong>Há mais registros do que o exibido</strong>
+            <p>A exibição atingiu o limite de {PAGINA_SIZE * MAX_PAGINAS} registros. Use os filtros ou a busca para ver os demais.</p>
+          </div>
+        </div>
+      )}
+
       <div className="card section">
         <div className="flex-between" style={{ marginBottom: 14 }}>
           <div className="tag-row" style={{ marginBottom: 0 }}>
             <button className={`tag-filter ${filtroPend === "todas" ? "active" : ""}`} onClick={() => setFiltroPend("todas")}>Todas ({lista.length})</button>
             <button className={`tag-filter ${filtroPend === "pendentes" ? "active" : ""}`} onClick={() => setFiltroPend("pendentes")}>Pendentes ({qtdPendentes})</button>
+            <button className="tag-filter" onClick={() => setVerTudo((v) => !v)}>
+              {verTudo ? "Mostrar só o ano atual" : "Ver histórico completo"}
+            </button>
           </div>
           <input
             className="search-input"
@@ -1025,18 +1074,16 @@ function Saida({ user, itens }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [nomesPorPn, setNomesPorPn] = useState({});
+  const [verTudo, setVerTudo] = useState(false); // false = só o ano vigente
+  const [truncado, setTruncado] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    const { data } = await sb
-      .from("movimentos_estoque")
-      .select("*")
-      .eq("tipo", "saida")
-      .order("data_movimento", { ascending: false })
-      .limit(200);
-    setLista(data || []);
+    const { dados, truncado } = await carregarMovimentosPaginado("saida", verTudo ? null : inicioAnoVigente());
+    setLista(dados);
+    setTruncado(truncado);
     // resolve nomes dos usuários que registraram
-    const pns = Array.from(new Set((data || []).map((m) => m.usuario_pn).filter(Boolean)));
+    const pns = Array.from(new Set(dados.map((m) => m.usuario_pn).filter(Boolean)));
     if (pns.length > 0) {
       const { data: us } = await sb.from("usuarios").select("pn, nome").in("pn", pns);
       const map = {};
@@ -1044,7 +1091,7 @@ function Saida({ user, itens }) {
       setNomesPorPn(map);
     }
     setLoading(false);
-  }, []);
+  }, [verTudo]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -1058,8 +1105,23 @@ function Saida({ user, itens }) {
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Registrar saída</button>
       </div>
 
+      {truncado && (
+        <div className="alert-banner" style={{ marginBottom: 16 }}>
+          <span className="icon">ℹ️</span>
+          <div>
+            <strong>Há mais registros do que o exibido</strong>
+            <p>A exibição atingiu o limite de {PAGINA_SIZE * MAX_PAGINAS} registros. Use os filtros ou a busca para ver os demais.</p>
+          </div>
+        </div>
+      )}
+
       <div className="card section">
-        <h2 style={{ marginBottom: 14 }}>Últimas saídas</h2>
+        <div className="flex-between" style={{ marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>{verTudo ? "Saídas (histórico completo)" : "Saídas do ano atual"} <span className="small muted" style={{ fontWeight: 400 }}>· {lista.length}</span></h2>
+          <button className="tag-filter" onClick={() => setVerTudo((v) => !v)}>
+            {verTudo ? "Mostrar só o ano atual" : "Ver histórico completo"}
+          </button>
+        </div>
         <div className="table-scroll">
           <table className="data-table sticky-head">
             <thead>
@@ -1370,6 +1432,14 @@ function ehCorrecaoMov(m) {
     || m.local_destino === "Correção Estoque";
 }
 
+// Um movimento entra nos gráficos de fluxo (consumo/aquisição) do Dashboard
+// quando NÃO é correção de estoque E tem quantidade positiva. Estornos e
+// correções com quantidade negativa ficam de fora — consumo/entrada real nunca
+// é negativo. (Isso não altera o estoque, só os gráficos.)
+function entraNoGrafico(m) {
+  return !ehCorrecaoMov(m) && Number(m.quantidade || 0) > 0;
+}
+
 // Mês a partir do qual os dashboards exibem dados (meses anteriores ficam de fora).
 const MES_INICIO_DASH = "2026-01";
 
@@ -1471,15 +1541,18 @@ function DashboardAnalytics({ itens }) {
   const [fCentros, setFCentros] = useState([]);  // multi-seleção
   const [fDataIni, setFDataIni] = useState("");
   const [fDataFim, setFDataFim] = useState("");
+  const [movsTruncado, setMovsTruncado] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
     // Reservas e saídas de jan/2026 em diante. O Supabase retorna no máximo
     // ~1000 linhas por consulta, então buscamos em páginas até trazer tudo —
-    // assim nenhum mês é cortado (jan…mês atual sempre completos).
-    const PAGINA = 1000;
+    // assim nenhum mês é cortado (jan…mês atual sempre completos). Há um teto de
+    // segurança; se for atingido, avisamos que há mais dados.
     let desde = 0;
     let todos = [];
+    let paginas = 0;
+    let trunc = false;
     while (true) {
       const { data: pagina, error } = await sb
         .from("movimentos_estoque")
@@ -1487,13 +1560,16 @@ function DashboardAnalytics({ itens }) {
         .in("tipo", ["reserva", "saida"])
         .gte("data_movimento", MES_INICIO_DASH + "-01")
         .order("data_movimento", { ascending: true })
-        .range(desde, desde + PAGINA - 1);
+        .range(desde, desde + PAGINA_SIZE - 1);
       if (error || !pagina) break;
       todos = todos.concat(pagina);
-      if (pagina.length < PAGINA) break;
-      desde += PAGINA;
+      paginas++;
+      if (pagina.length < PAGINA_SIZE) break;
+      if (paginas >= MAX_PAGINAS) { trunc = true; break; }
+      desde += PAGINA_SIZE;
     }
     setMovs(todos);
+    setMovsTruncado(trunc);
     const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual, preco").order("estoque_atual", { ascending: false });
     setEstoque(est || []);
     // mapa de preço por código (para valores)
@@ -1546,7 +1622,7 @@ function DashboardAnalytics({ itens }) {
   // 1) reservas por mês
   const reservasPorMes = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m)).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "reserva" && entraNoGrafico(m)).forEach((m) => {
       if (!m.data_movimento) return;
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
@@ -1557,7 +1633,7 @@ function DashboardAnalytics({ itens }) {
   // 2) saídas por mês
   const saidasPorMes = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m)).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "saida" && entraNoGrafico(m)).forEach((m) => {
       if (!m.data_movimento) return;
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
@@ -1567,7 +1643,7 @@ function DashboardAnalytics({ itens }) {
 
   // 3) consumo por área (local) por mês -> dataset empilhado
   const consumoAreaMes = useMemo(() => {
-    const saidas = filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m) && m.data_movimento);
+    const saidas = filtrado.filter((m) => m.tipo === "saida" && entraNoGrafico(m) && m.data_movimento);
     const meses = mesesContinuos(Array.from(new Set(saidas.map((m) => m.data_movimento.slice(0, 7)))), mesFim);
     const areas = Array.from(new Set(saidas.map((m) => m.local_destino || "—")));
     const matriz = {}; // area -> {mes: total}
@@ -1583,7 +1659,7 @@ function DashboardAnalytics({ itens }) {
   // 4) itens mais consumidos
   const itensMaisConsumidos = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m)).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "saida" && entraNoGrafico(m)).forEach((m) => {
       map[m.codigo] = (map[m.codigo] || 0) + Number(m.quantidade || 0);
     });
     return Object.keys(map)
@@ -1605,7 +1681,7 @@ function DashboardAnalytics({ itens }) {
   // 6) valor adquirido (reserva) por mês, por centro de custo — empilhado
   //    valor = preço unitário atual × quantidade reservada
   const valorCCporMes = useMemo(() => {
-    const reservas = filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m) && m.data_movimento);
+    const reservas = filtrado.filter((m) => m.tipo === "reserva" && entraNoGrafico(m) && m.data_movimento);
     const meses = mesesContinuos(Array.from(new Set(reservas.map((m) => m.data_movimento.slice(0, 7)))), mesFim);
     const ccs = Array.from(new Set(reservas.map((m) => m.centro_custo || "—")));
     const matriz = {};
@@ -1624,7 +1700,7 @@ function DashboardAnalytics({ itens }) {
   // 7) itens adquiridos (reserva), do maior para o menor — por valor
   const itensAdquiridos = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m)).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "reserva" && entraNoGrafico(m)).forEach((m) => {
       const valor = Number(m.quantidade || 0) * (precos[m.codigo] || 0);
       map[m.codigo] = (map[m.codigo] || 0) + valor;
     });
@@ -1710,6 +1786,16 @@ function DashboardAnalytics({ itens }) {
         <h1>Dashboard</h1>
         <p>Análise de reservas e consumo. Use os filtros para refinar; sem filtros, os gráficos mostram tudo.</p>
       </div>
+
+      {movsTruncado && (
+        <div className="alert-banner" style={{ marginBottom: 20 }}>
+          <span className="icon">ℹ️</span>
+          <div>
+            <strong>Há mais dados do que o exibido</strong>
+            <p>A exibição atingiu o limite de {PAGINA_SIZE * MAX_PAGINAS} movimentos. Use o filtro de datas para analisar períodos específicos.</p>
+          </div>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="card section filtros-card" style={{ marginBottom: 20 }}>
