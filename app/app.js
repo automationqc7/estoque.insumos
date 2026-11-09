@@ -1474,18 +1474,26 @@ function DashboardAnalytics({ itens }) {
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    // reservas e saídas, agora com centro_custo
-    const { data } = await sb
-      .from("movimentos_estoque")
-      .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao, motivo")
-      .in("tipo", ["reserva", "saida"])
-      // Só o período exibido no dashboard (jan/2026 em diante). Reduz muito o
-      // volume e evita que o limite corte os meses mais recentes. Ordena do mais
-      // recente para o mais antigo por segurança.
-      .gte("data_movimento", MES_INICIO_DASH + "-01")
-      .order("data_movimento", { ascending: false })
-      .limit(50000);
-    setMovs(data || []);
+    // Reservas e saídas de jan/2026 em diante. O Supabase retorna no máximo
+    // ~1000 linhas por consulta, então buscamos em páginas até trazer tudo —
+    // assim nenhum mês é cortado (jan…mês atual sempre completos).
+    const PAGINA = 1000;
+    let desde = 0;
+    let todos = [];
+    while (true) {
+      const { data: pagina, error } = await sb
+        .from("movimentos_estoque")
+        .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao, motivo")
+        .in("tipo", ["reserva", "saida"])
+        .gte("data_movimento", MES_INICIO_DASH + "-01")
+        .order("data_movimento", { ascending: true })
+        .range(desde, desde + PAGINA - 1);
+      if (error || !pagina) break;
+      todos = todos.concat(pagina);
+      if (pagina.length < PAGINA) break;
+      desde += PAGINA;
+    }
+    setMovs(todos);
     const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual, preco").order("estoque_atual", { ascending: false });
     setEstoque(est || []);
     // mapa de preço por código (para valores)
