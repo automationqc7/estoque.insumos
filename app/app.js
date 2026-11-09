@@ -288,14 +288,14 @@ function Dashboard({ user, onNavigate }) {
     const [{ data: ccs }, { data: reservas }, { data: precos }, { data: movMes }] = await Promise.all([
       sb.from("centros_custo").select("numero, descricao, budget"),
       sb.from("movimentos_estoque")
-        .select("codigo, quantidade, centro_custo, data_movimento, correcao")
+        .select("codigo, quantidade, centro_custo, data_movimento, correcao, motivo")
         .eq("tipo", "reserva")
         .gte("data_movimento", ini)
         .lte("data_movimento", fim + "T23:59:59"),
       sb.from("itens").select("codigo, preco"),
       // recebido e consumido do MÊS corrente (para os cards)
       sb.from("movimentos_estoque")
-        .select("tipo, quantidade, correcao, data_movimento")
+        .select("tipo, quantidade, correcao, motivo, data_movimento")
         .in("tipo", ["recebimento", "saida"])
         .gte("data_movimento", ini)
         .lte("data_movimento", fim + "T23:59:59"),
@@ -306,7 +306,7 @@ function Dashboard({ user, onNavigate }) {
 
     const realizado = {};
     (reservas || []).forEach((r) => {
-      if (r.correcao) return; // correção de estoque não entra no custo de reserva
+      if (ehCorrecaoMov(r)) return; // correção de estoque não entra no custo de reserva
       const cc = r.centro_custo || "—";
       realizado[cc] = (realizado[cc] || 0) + Number(r.quantidade || 0) * (precoMap[r.codigo] || 0);
     });
@@ -315,7 +315,7 @@ function Dashboard({ user, onNavigate }) {
     let recMes = 0, consMes = 0;
     (movMes || []).forEach((m) => {
       if (m.tipo === "recebimento") recMes += Number(m.quantidade || 0);
-      else if (m.tipo === "saida" && !m.correcao) consMes += Number(m.quantidade || 0);
+      else if (m.tipo === "saida" && !ehCorrecaoMov(m)) consMes += Number(m.quantidade || 0);
     });
     setRecebidoMes(recMes);
     setConsumidoMes(consMes);
@@ -1210,7 +1210,7 @@ function Estoque() {
       if (filtro === "criticos" && i.status !== "CRITICO") return false;
       if (busca) {
         const q = busca.toLowerCase();
-        if (!(`${i.codigo}`.includes(q) || (i.descricao || "").toLowerCase().includes(q))) return false;
+        if (!(`${i.codigo}`.toLowerCase().includes(q) || (i.descricao || "").toLowerCase().includes(q))) return false;
       }
       return true;
     });
@@ -1361,6 +1361,13 @@ function TreemapBox({ dados, height = 340 }) {
   );
 }
 
+// Um movimento é "correção de estoque" (entrada ou saída) quando está marcado
+// na coluna correcao OU quando o motivo é "Correção Estoque". Esses lançamentos
+// não entram em nenhum gráfico do Dashboard.
+function ehCorrecaoMov(m) {
+  return m.correcao === true || m.motivo === "Correção Estoque";
+}
+
 // Converte "YYYY-MM" -> "mmm/yy" para rótulos mais curtos
 function labelMes(ym) {
   const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -1423,6 +1430,10 @@ function DashboardAnalytics({ itens }) {
   const [sapProd, setSapProd] = useState([]);
   const [sapEstoque, setSapEstoque] = useState([]);
   const [turnoSel, setTurnoSel] = useState("todos");
+  const [mesSel, setMesSel] = useState(() => {
+    const a = new Date();
+    return `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [loading, setLoading] = useState(true);
 
   // filtros
@@ -1437,7 +1448,7 @@ function DashboardAnalytics({ itens }) {
     // reservas e saídas, agora com centro_custo
     const { data } = await sb
       .from("movimentos_estoque")
-      .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao")
+      .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao, motivo")
       .in("tipo", ["reserva", "saida"])
       .order("data_movimento", { ascending: true })
       .limit(20000);
@@ -1486,7 +1497,7 @@ function DashboardAnalytics({ itens }) {
   // 1) reservas por mês
   const reservasPorMes = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "reserva" && !m.correcao).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m)).forEach((m) => {
       if (!m.data_movimento) return;
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
@@ -1497,7 +1508,7 @@ function DashboardAnalytics({ itens }) {
   // 2) saídas por mês
   const saidasPorMes = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "saida" && !m.correcao).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m)).forEach((m) => {
       if (!m.data_movimento) return;
       const ym = m.data_movimento.slice(0, 7);
       map[ym] = (map[ym] || 0) + Number(m.quantidade || 0);
@@ -1507,7 +1518,7 @@ function DashboardAnalytics({ itens }) {
 
   // 3) consumo por área (local) por mês -> dataset empilhado
   const consumoAreaMes = useMemo(() => {
-    const saidas = filtrado.filter((m) => m.tipo === "saida" && !m.correcao && m.data_movimento);
+    const saidas = filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m) && m.data_movimento);
     const meses = Array.from(new Set(saidas.map((m) => m.data_movimento.slice(0, 7)))).sort();
     const areas = Array.from(new Set(saidas.map((m) => m.local_destino || "—")));
     const matriz = {}; // area -> {mes: total}
@@ -1523,7 +1534,7 @@ function DashboardAnalytics({ itens }) {
   // 4) itens mais consumidos
   const itensMaisConsumidos = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "saida" && !m.correcao).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "saida" && !ehCorrecaoMov(m)).forEach((m) => {
       map[m.codigo] = (map[m.codigo] || 0) + Number(m.quantidade || 0);
     });
     return Object.keys(map)
@@ -1545,7 +1556,7 @@ function DashboardAnalytics({ itens }) {
   // 6) valor adquirido (reserva) por mês, por centro de custo — empilhado
   //    valor = preço unitário atual × quantidade reservada
   const valorCCporMes = useMemo(() => {
-    const reservas = filtrado.filter((m) => m.tipo === "reserva" && !m.correcao && m.data_movimento);
+    const reservas = filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m) && m.data_movimento);
     const meses = Array.from(new Set(reservas.map((m) => m.data_movimento.slice(0, 7)))).sort();
     const ccs = Array.from(new Set(reservas.map((m) => m.centro_custo || "—")));
     const matriz = {};
@@ -1564,7 +1575,7 @@ function DashboardAnalytics({ itens }) {
   // 7) itens adquiridos (reserva), do maior para o menor — por valor
   const itensAdquiridos = useMemo(() => {
     const map = {};
-    filtrado.filter((m) => m.tipo === "reserva" && !m.correcao).forEach((m) => {
+    filtrado.filter((m) => m.tipo === "reserva" && !ehCorrecaoMov(m)).forEach((m) => {
       const valor = Number(m.quantidade || 0) * (precos[m.codigo] || 0);
       map[m.codigo] = (map[m.codigo] || 0) + valor;
     });
@@ -1584,6 +1595,7 @@ function DashboardAnalytics({ itens }) {
   };
 
   // --- Sapatas: produção mensal ---
+  // Considera os lançamentos de produção de sapatas (independe da montagem).
   const sapProdMensal = useMemo(() => {
     const map = {};
     sapProd.forEach((p) => {
@@ -1594,19 +1606,26 @@ function DashboardAnalytics({ itens }) {
     return Object.keys(map).sort().map((k) => ({ mes: k, valor: map[k] }));
   }, [sapProd]);
 
-  // --- Sapatas: produção diária do mês corrente (com filtro de turno) ---
+  // Meses com produção disponíveis para seleção (mais recente primeiro),
+  // sempre incluindo o mês atual.
+  const mesesProdDisp = useMemo(() => {
+    const set = new Set(sapProd.map((p) => String(p.data_producao || "").slice(0, 7)).filter(Boolean));
+    const a = new Date();
+    set.add(`${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, "0")}`);
+    return Array.from(set).sort().reverse();
+  }, [sapProd]);
+
+  // --- Sapatas: produção diária do mês selecionado (com filtro de turno) ---
   const sapProdDiaria = useMemo(() => {
-    const agora = new Date();
-    const ym = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
     const map = {};
     sapProd.forEach((p) => {
-      if (!p.data_producao || String(p.data_producao).slice(0, 7) !== ym) return;
+      if (!p.data_producao || String(p.data_producao).slice(0, 7) !== mesSel) return;
       if (turnoSel !== "todos" && p.turno !== turnoSel) return;
       const dia = String(p.data_producao).slice(8, 10);
       map[dia] = (map[dia] || 0) + Number(p.quantidade || 0);
     });
     return Object.keys(map).sort().map((k) => ({ dia: k, valor: map[k] }));
-  }, [sapProd, turnoSel]);
+  }, [sapProd, turnoSel, mesSel]);
 
   // --- Sapatas: estoque por modelo (treemap) ---
   const sapEstoqueTree = useMemo(() => {
@@ -1861,13 +1880,18 @@ function DashboardAnalytics({ itens }) {
 
           <div className="card section">
             <div className="flex-between" style={{ marginBottom: 16 }}>
-              <h2>Produção diária (mês atual)</h2>
-              <select value={turnoSel} onChange={(e) => setTurnoSel(e.target.value)} style={{ maxWidth: 150, fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)" }}>
-                <option value="todos">Todos os turnos</option>
-                {turnosDisp.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <h2>Produção diária</h2>
+              <div style={{ display: "flex", gap: 8 }}>
+                <select value={mesSel} onChange={(e) => setMesSel(e.target.value)} style={{ maxWidth: 130, fontSize: 11, padding: "5px 8px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  {mesesProdDisp.map((m) => <option key={m} value={m}>{labelMes(m)}</option>)}
+                </select>
+                <select value={turnoSel} onChange={(e) => setTurnoSel(e.target.value)} style={{ maxWidth: 140, fontSize: 11, padding: "5px 8px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  <option value="todos">Todos os turnos</option>
+                  {turnosDisp.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </div>
-            {sapProdDiaria.length === 0 ? <div className="empty-state">Sem produção no mês atual{turnoSel !== "todos" ? " para este turno" : ""}.</div> : (
+            {sapProdDiaria.length === 0 ? <div className="empty-state">Sem produção em {labelMes(mesSel)}{turnoSel !== "todos" ? " para este turno" : ""}.</div> : (
               <ChartBox
                 type="line"
                 data={{
@@ -2106,6 +2130,7 @@ function SapatasMontagem({ user }) {
   const [nomesPorPn, setNomesPorPn] = useState({});
   const [loading, setLoading] = useState(true);
   const [montando, setMontando] = useState(null); // linha selecionada p/ montar
+  const [busca, setBusca] = useState("");
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -2129,24 +2154,39 @@ function SapatasMontagem({ user }) {
     return m;
   }, [lista, hist]);
 
+  const listaFiltrada = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return lista;
+    return lista.filter((r) =>
+      `${r.codigo}`.toLowerCase().includes(q) || (r.descricao || "").toLowerCase().includes(q)
+    );
+  }, [lista, busca]);
+
   return (
     <>
       <div className="card section" style={{ marginTop: 20 }}>
         <h2 style={{ marginBottom: 6 }}>Montagem de sapatas</h2>
         <p className="small muted" style={{ marginTop: 0, marginBottom: 14 }}>
-          Total produzido por código e quanto ainda falta montar. Só o que for montado entra no estoque.
+          Quanto ainda falta montar por código. Só o que for montado entra no estoque.
         </p>
+        <input
+          className="search-input"
+          type="text"
+          placeholder="Buscar pelo código da sapata (ex: 244L)…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid var(--border)", width: "100%", maxWidth: 320, marginBottom: 14 }}
+        />
         <div className="table-scroll">
           <table className="data-table sticky-head">
             <thead>
-              <tr><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Pendente Montagem</th><th>Montagem</th></tr>
+              <tr><th>Código</th><th>Descrição</th><th>Pendente Montagem</th><th>Montagem</th></tr>
             </thead>
             <tbody>
-              {lista.map((r) => (
+              {listaFiltrada.map((r) => (
                 <tr key={r.codigo}>
                   <td>{r.codigo}</td>
                   <td>{r.descricao || "—"}</td>
-                  <td>{fmtNum(r.total_produzido)}</td>
                   <td><strong>{fmtNum(r.pendente_montagem)}</strong></td>
                   <td>
                     <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: 12.5 }} onClick={() => setMontando(r)}>
@@ -2155,8 +2195,8 @@ function SapatasMontagem({ user }) {
                   </td>
                 </tr>
               ))}
-              {!loading && lista.length === 0 && (
-                <tr><td colSpan="5"><div className="empty-state">Nenhuma sapata pendente de montagem.</div></td></tr>
+              {!loading && listaFiltrada.length === 0 && (
+                <tr><td colSpan="4"><div className="empty-state">{busca ? "Nenhuma sapata encontrada." : "Nenhuma sapata pendente de montagem."}</div></td></tr>
               )}
             </tbody>
           </table>
