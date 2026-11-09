@@ -1370,16 +1370,23 @@ function ehCorrecaoMov(m) {
     || m.local_destino === "Correção Estoque";
 }
 
-// Gera a sequência contínua de meses ("YYYY-MM") do primeiro mês com dado até
-// fimYM (inclusive), preenchendo os meses vazios. Serve para que os gráficos
-// continuem até o mês atual e cada novo mês apareça automaticamente.
+// Mês a partir do qual os dashboards exibem dados (meses anteriores ficam de fora).
+const MES_INICIO_DASH = "2026-01";
+
+// Gera a sequência contínua de meses ("YYYY-MM") do primeiro mês exibido até
+// fimYM (inclusive), preenchendo os meses vazios. O início é o mais recente
+// entre o primeiro mês com dado e MES_INICIO_DASH, de modo que nada antes de
+// jan/2026 apareça; e o fim avança até o mês atual automaticamente.
 function mesesContinuos(keys, fimYM) {
   const ks = (keys || []).filter(Boolean).sort();
   if (ks.length === 0) return [];
+  let inicio = ks[0];
+  if (inicio < MES_INICIO_DASH) inicio = MES_INICIO_DASH;
   let fim = fimYM;
   if (!fim || fim < ks[ks.length - 1]) fim = ks[ks.length - 1];
+  if (fim < inicio) return [];
   const out = [];
-  let [y, m] = ks[0].split("-").map(Number);
+  let [y, m] = inicio.split("-").map(Number);
   const [fy, fm] = fim.split("-").map(Number);
   let guard = 0;
   while ((y < fy || (y === fy && m <= fm)) && guard < 600) {
@@ -1472,7 +1479,9 @@ function DashboardAnalytics({ itens }) {
       .from("movimentos_estoque")
       .select("tipo, codigo, quantidade, data_movimento, local_destino, centro_custo, correcao, motivo")
       .in("tipo", ["reserva", "saida"])
-      .order("data_movimento", { ascending: true })
+      // mais recentes primeiro: se algum dia o total passar do limite, os meses
+      // recentes continuam aparecendo (os mais antigos é que seriam cortados).
+      .order("data_movimento", { ascending: false })
       .limit(20000);
     setMovs(data || []);
     const { data: est } = await sb.from("vw_estoque_atual").select("codigo, descricao, estoque_atual, preco").order("estoque_atual", { ascending: false });
