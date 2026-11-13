@@ -621,6 +621,7 @@ function ReservaRecebimento({ user, itens }) {
   const [filtroPend, setFiltroPend] = useState("todas");
   const [verTudo, setVerTudo] = useState(false); // false = só o ano vigente
   const [truncado, setTruncado] = useState(false);
+  const [excluindo, setExcluindo] = useState(null); // reserva selecionada p/ excluir
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -690,7 +691,7 @@ function ReservaRecebimento({ user, itens }) {
             <thead>
               <tr>
                 <th>Data Reserva</th><th>Reserva</th><th>Responsável</th><th>Código</th><th>Descrição</th><th>Valor unit.</th><th>Quant.</th><th>Un.</th><th>Custo total</th>
-                <th>C/C</th><th>Data da Entrega</th><th>Laudo</th><th>Qtd. Recebida</th><th>Pendência</th><th>Resp. Recebimento</th><th></th>
+                <th>C/C</th><th>Data da Entrega</th><th>Laudo</th><th>Qtd. Recebida</th><th>Pendência</th><th>Resp. Recebimento</th><th></th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -724,10 +725,13 @@ function ReservaRecebimento({ user, itens }) {
                       </button>
                     ) : "—"}
                   </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <IconButton kind="delete" title="Excluir reserva" onClick={() => setExcluindo(m)} />
+                  </td>
                 </tr>
               );})}
               {!loading && filtrado.length === 0 && (
-                <tr><td colSpan="16"><div className="empty-state">Nenhuma reserva encontrada.</div></td></tr>
+                <tr><td colSpan="17"><div className="empty-state">Nenhuma reserva encontrada.</div></td></tr>
               )}
             </tbody>
           </table>
@@ -748,6 +752,18 @@ function ReservaRecebimento({ user, itens }) {
           user={user}
           onClose={() => setRecebendo(null)}
           onSaved={() => { setRecebendo(null); carregar(); }}
+        />
+      )}
+      {excluindo && (
+        <ConfirmModal
+          titulo="Excluir reserva"
+          mensagem={`Excluir a reserva ${excluindo.numero_reserva ? `"${excluindo.numero_reserva}" ` : ""}do item ${excluindo.codigo} (${fmtNum(excluindo.quantidade)})? Esta ação não pode ser desfeita. Os recebimentos já registrados para esta reserva não são apagados.`}
+          onClose={() => setExcluindo(null)}
+          onConfirm={async () => {
+            await sb.from("movimentos_estoque").delete().eq("id", excluindo.id);
+            setExcluindo(null);
+            carregar();
+          }}
         />
       )}
     </div>
